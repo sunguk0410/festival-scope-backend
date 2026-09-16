@@ -1,0 +1,3 @@
+package likelion.festivalscope.common.util;
+import java.math.BigDecimal;
+public final class GeoDistance{private static final double R=6371000D;private GeoDistance(){}public static int meters(BigDecimal a,BigDecimal b,BigDecimal c,BigDecimal d){double p=Math.toRadians(a.doubleValue()),q=Math.toRadians(c.doubleValue()),dp=Math.toRadians(c.subtract(a).doubleValue()),dl=Math.toRadians(d.subtract(b).doubleValue()),x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p)*Math.cos(q)*Math.sin(dl/2)*Math.sin(dl/2);return(int)Math.round(2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));}}
