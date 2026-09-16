@@ -1,10 +1,13 @@
 package likelion.festivalscope.analysis.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import likelion.festivalscope.analysis.analyzer.TargetVisitorAnalyzer;
 import likelion.festivalscope.analysis.analyzer.TrendAnalysisResult;
 import likelion.festivalscope.analysis.analyzer.TrendFitAnalyzer;
 import likelion.festivalscope.analysis.analyzer.DemandFitAnalyzer;
 import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
+import likelion.festivalscope.analysis.weather.WeatherRiskAnalyzer;
+import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
 import likelion.festivalscope.analysis.dto.response.FestivalAnalysisResponse;
 import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
@@ -43,6 +46,9 @@ public class FestivalAnalysisService {
     private final FestivalAnalysisDemandRepository festivalAnalysisDemandRepository;
     private final FestivalAnalysisAccessibilityRepository festivalAnalysisAccessibilityRepository;
     private final DemandFitAnalyzer demandFitAnalyzer;
+    private final WeatherRiskAnalyzer weatherRiskAnalyzer;
+    private final FestivalAnalysisWeatherRiskSnapshotRepository weatherRiskSnapshotRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(noRollbackFor = AnalysisExecutionException.class)
     public Long execute(Long planId) {
@@ -99,6 +105,12 @@ public class FestivalAnalysisService {
             FestivalAnalysisItem demandFitItem = items.stream().filter(item -> item.getItemType() == AnalysisItemType.DEMAND_FIT).findFirst().orElseThrow();
             DemandFitAnalyzer.Result demandResult = demandFitAnalyzer.analyze(plan);
             saveDemandSnapshots(demandFitItem, plan, demandResult);
+
+            FestivalAnalysisItem weatherRiskItem = items.stream()
+                    .filter(item -> item.getItemType() == AnalysisItemType.WEATHER_RISK)
+                    .findFirst()
+                    .orElseThrow();
+            saveWeatherRiskSnapshot(weatherRiskItem, weatherRiskAnalyzer.analyze(plan));
 
             replaceItemScore(targetVisitorItem, result.score());
             replaceAnalysisStatus(analysis, result.score(), AnalysisStatus.COMPLETED, LocalDateTime.now());
@@ -166,6 +178,39 @@ public class FestivalAnalysisService {
                 festivalAnalysisDemandRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()),
                 festivalAnalysisAccessibilityRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElse(null));
         return new DemandFitResponse(item.getItemType(), item.getScore(), result.regionalDemand(), result.seasonalDemand(), result.accessibility());
+    }
+
+    @Transactional(readOnly = true)
+    public WeatherRiskResponse getWeatherRisk(Long analysisId) {
+        FestivalAnalysis analysis = getAnalysisEntity(analysisId);
+        FestivalAnalysisItem item = festivalAnalysisItemRepository.findByFestivalAnalysis_FestivalAnalysisIdAndItemType(analysisId, AnalysisItemType.WEATHER_RISK)
+                .orElseThrow(() -> new ResourceNotFoundException("WEATHER_RISK item not found: " + analysisId));
+        FestivalAnalysisWeatherRiskSnapshot snapshot = weatherRiskSnapshotRepository
+                .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
+                .orElseThrow(() -> new AnalysisExecutionException("WEATHER_RISK snapshot not found: " + analysisId));
+        try {
+            return objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
+        } catch (Exception exception) {
+            throw new AnalysisExecutionException("WEATHER_RISK snapshot parsing failed: " + analysisId, exception);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public WeatherRiskResponse testWeatherRisk(Long planId) {
+        FestivalPlan plan = festivalPlanRepository.findById(planId)
+                .orElseThrow(() -> new ResourceNotFoundException("FestivalPlan not found: " + planId));
+        return weatherRiskAnalyzer.analyze(plan);
+    }
+
+    private void saveWeatherRiskSnapshot(FestivalAnalysisItem item, WeatherRiskResponse response) {
+        try {
+            weatherRiskSnapshotRepository.save(FestivalAnalysisWeatherRiskSnapshot.builder()
+                    .festivalAnalysisItem(item)
+                    .resultJson(objectMapper.writeValueAsString(response))
+                    .build());
+        } catch (Exception exception) {
+            throw new AnalysisExecutionException("WEATHER_RISK snapshot save failed", exception);
+        }
     }
 
     private void saveDemandSnapshots(FestivalAnalysisItem item, FestivalPlan plan, DemandFitAnalyzer.Result result) {
