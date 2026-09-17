@@ -321,11 +321,12 @@ public class FestivalAnalysisService {
 
     private void saveDemandSnapshots(FestivalAnalysisItem item, FestivalPlan plan, DemandFitAnalyzer.Result result) {
         List<FestivalAnalysisDemand> rows = new ArrayList<>();
-        result.regionalYears().forEach(row -> rows.add(FestivalAnalysisDemand.builder().festivalAnalysisItem(item).demandType(DemandType.REGIONAL).regionCode(row.code()).sido(plan.getSido()).sigungu(row.name()).statYear(row.year()).visitorCount(row.value()).build()));
+        result.regionalYears().forEach(row -> rows.add(FestivalAnalysisDemand.builder().festivalAnalysisItem(item).demandType(DemandType.REGIONAL).regionCode(row.code()).sido(row.sido()).sigungu(row.name()).statYear(row.year()).visitorCount(row.value()).build()));
         result.dailyRecords().forEach(row -> rows.add(FestivalAnalysisDemand.builder().festivalAnalysisItem(item).demandType(DemandType.SEASONAL).regionCode(row.regionCode()).sido(plan.getSido()).sigungu(row.regionName()).statYear(row.date().getYear()).statMonth(row.date().getMonthValue()).statDay(row.date().getDayOfMonth()).visitorCount(row.visitorCount()).build()));
             festivalAnalysisDemandRepository.saveAll(rows);
         DemandFitResponse.Bus bus = result.accessibility().bus(); DemandFitResponse.Rail rail = result.accessibility().rail();
-        festivalAnalysisAccessibilityRepository.save(FestivalAnalysisAccessibility.builder().festivalAnalysisItem(item).nearestBusStopName(bus.nearestStopName()).nearestBusStopDistanceM(bus.nearestStopDistanceM()).busStopCount500m(bus.stopCount500m()).busStopCount1km(bus.stopCount1km()).busRouteCount(bus.routeCount()).railAvailable(rail.available()).nearestStationName(rail.nearestStationName()).nearestStationDistanceM(rail.nearestStationDistanceM()).build());
+        DemandFitResponse.Parking parking = result.accessibility().parking();
+        festivalAnalysisAccessibilityRepository.save(FestivalAnalysisAccessibility.builder().festivalAnalysisItem(item).nearestBusStopName(bus.nearestStopName()).nearestBusStopDistanceM(bus.nearestStopDistanceM()).busStopCount500m(bus.stopCount500m()).busStopCount1km(bus.stopCount1km()).busRouteCount(bus.routeCount()).railAvailable(rail.available()).nearestStationName(rail.nearestStationName()).nearestStationDistanceM(rail.nearestStationDistanceM()).parkingCount(parking.parkingCount()).parkingCapacity(parking.parkingCapacity()).build());
     }
     private FestivalAnalysis getAnalysisEntity(Long analysisId) {
         return festivalAnalysisRepository.findById(analysisId)

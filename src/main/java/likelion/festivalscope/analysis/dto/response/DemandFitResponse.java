@@ -7,7 +7,7 @@ import java.util.List;
 public record DemandFitResponse(AnalysisItemType itemType, BigDecimal score,
                                 RegionalDemand regionalDemand, SeasonalDemand seasonalDemand,
                                 Accessibility accessibility) {
-    public record RegionalDemand(String region, Long visitorCount, BigDecimal comparisonAverage,
+    public record RegionalDemand(String sido, String region, Long visitorCount, BigDecimal comparisonAverage,
                                  BigDecimal comparisonMedian, Integer rank, Integer totalRegions,
                                  BigDecimal percentile, List<ComparisonRegion> comparisonRegions) {}
     public record ComparisonRegion(String region, Long visitorCount, Integer rank) {}
@@ -18,11 +18,12 @@ public record DemandFitResponse(AnalysisItemType itemType, BigDecimal score,
     public record MonthlyDemand(Integer month, BigDecimal visitorAverage) {}
     public record WeeklyDemand(Integer week, Integer startDay, Integer endDay, Integer days,
                                BigDecimal averageDailyVisitors, Integer rank, Boolean referenceOnly) {}
-    public record Accessibility(Bus bus, Rail rail) {}
+    public record Accessibility(Bus bus, Rail rail, Parking parking) {}
     public record Bus(String nearestStopName, Integer nearestStopDistanceM, Integer stopCount500m,
                       Integer stopCount1km, Integer routeCount) {}
     public record Rail(Boolean available, String nearestStationName, Integer nearestStationDistanceM,
                        String nearestStationLines, Integer stationsWithin1Km,
                        List<NearbyStation> nearbyStations) {}
     public record NearbyStation(String stationName, Integer distanceMeters, String lineName) {}
+    public record Parking(Integer parkingCount, Integer parkingCapacity) {}
 }

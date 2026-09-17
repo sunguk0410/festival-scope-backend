@@ -16,6 +16,7 @@ import likelion.festivalscope.global.exception.BusinessException;
 import likelion.festivalscope.global.exception.ErrorCode;
 import likelion.festivalscope.plan.entity.FestivalPlan;
 import likelion.festivalscope.station.service.StationAccessibilityService;
+import likelion.festivalscope.parking.service.ParkingAccessibilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -54,6 +55,7 @@ public class DemandFitAnalyzer {
     private final BusStopClient busStopClient;
     private final BusRouteClient busRouteClient;
     private final StationAccessibilityService stationAccessibilityService;
+    private final ParkingAccessibilityService parkingAccessibilityService;
     private final RegionalVisitorCollector regionalVisitorCollector;
     private final RegionalVisitorStatRepository regionalVisitorStatRepository;
 
@@ -104,7 +106,9 @@ public class DemandFitAnalyzer {
                         saved == null ? null : saved.getBusStopCount500m(),
                         saved == null ? null : saved.getBusStopCount1km(),
                         saved == null ? null : saved.getBusRouteCount()),
-                stationAccessibilityService.analyze(plan.getLatitude(), plan.getLongitude()));
+                stationAccessibilityService.analyze(plan.getLatitude(), plan.getLongitude()),
+                new DemandFitResponse.Parking(saved == null ? null : saved.getParkingCount(),
+                        saved == null ? null : saved.getParkingCapacity()));
         return buildFromAggregates(plan, regionYears, daily, accessibility, LocalDate.now().getYear() - 1);
     }
 
@@ -209,7 +213,7 @@ public class DemandFitAnalyzer {
                 : median(comparisonEntries.stream().map(Map.Entry::getValue).toList());
         BigDecimal percentile = rank == null ? null : percentile(rank, ranked.size());
         DemandFitResponse.RegionalDemand regional = new DemandFitResponse.RegionalDemand(
-                target, targetValue, comparisonAverage, comparisonMedian, rank, totalRegions, percentile, comparisonRegions);
+                plan.getSido(), target, targetValue, comparisonAverage, comparisonMedian, rank, totalRegions, percentile, comparisonRegions);
 
         int month = plan.getStartDate() == null ? 1 : plan.getStartDate().getMonthValue();
         Map<Integer, BigDecimal> monthly = new LinkedHashMap<>();
@@ -232,7 +236,7 @@ public class DemandFitAnalyzer {
         DemandFitResponse.SeasonalDemand seasonal = new DemandFitResponse.SeasonalDemand(
                 month, eventMonthAverage, months, eventMonthRank, eventMonthPercentile, weeks, recommendedWeek);
         return new Result(regional, seasonal,
-                new DemandFitResponse.Accessibility(accessibility.bus(), accessibility.rail()), years, daily);
+                new DemandFitResponse.Accessibility(accessibility.bus(), accessibility.rail(), accessibility.parking()), years, daily);
     }
 
     private BigDecimal monthlyAverage(List<RegionalVisitorClient.VisitorRecord> daily, int month) {
@@ -291,11 +295,12 @@ public class DemandFitAnalyzer {
         for (BusStopClient.BusStop stop : stops) routeCount += busRouteClient.findRouteCount(stop.id(), stop.ctpvCode(), stop.sggCode());
         int near500 = (int) stops.stream().filter(s -> GeoDistance.meters(plan.getLatitude(), plan.getLongitude(), s.latitude(), s.longitude()) <= 500).count();
         DemandFitResponse.Rail rail = stationAccessibilityService.analyze(plan.getLatitude(), plan.getLongitude());
+        ParkingAccessibilityService.Result parking = parkingAccessibilityService.analyze(plan.getLatitude(), plan.getLongitude());
         return new AccessibilityData(
                 new DemandFitResponse.Bus(nearest == null ? null : nearest.name(),
                         nearest == null ? null : GeoDistance.meters(plan.getLatitude(), plan.getLongitude(), nearest.latitude(), nearest.longitude()),
                         near500, stops.size(), routeCount),
-                rail);
+                rail, new DemandFitResponse.Parking(parking.parkingCount(), parking.parkingCapacity()));
     }
 
     private String findKey(Map<String, Long> values, String name) {
@@ -344,5 +349,6 @@ public class DemandFitAnalyzer {
                          List<RegionalYear> regionalYears,
                          List<RegionalVisitorClient.VisitorRecord> dailyRecords) {}
     public record RegionalYear(String name, String code, String sido, int year, long value) {}
-    private record AccessibilityData(DemandFitResponse.Bus bus, DemandFitResponse.Rail rail) {}
+    private record AccessibilityData(DemandFitResponse.Bus bus, DemandFitResponse.Rail rail,
+                                     DemandFitResponse.Parking parking) {}
 }
