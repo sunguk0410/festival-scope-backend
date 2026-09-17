@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -32,6 +33,7 @@ public class AuthController {
             @ApiResponse(responseCode = "409", description = "이미 가입된 이메일")
     })
     @PostMapping("/signup")
+    @SecurityRequirements
     @ResponseStatus(HttpStatus.CREATED)
     public SignupResponse signup(@Valid @RequestBody SignupRequest request) {
         return authService.signup(request);
@@ -43,6 +45,7 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "이메일 또는 비밀번호 불일치")
     })
     @PostMapping("/login")
+    @SecurityRequirements
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
     }
@@ -53,6 +56,7 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "Refresh Token이 없거나 만료 또는 유효하지 않음")
     })
     @PostMapping("/reissue")
+    @SecurityRequirements
     public TokenRefreshResponse reissue(@Valid @RequestBody TokenRefreshRequest request) {
         return authService.reissue(request);
     }
@@ -63,6 +67,7 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "Refresh Token을 찾을 수 없음")
     })
     @PostMapping("/logout")
+    @SecurityRequirements
     public void logout(@Valid @RequestBody TokenRefreshRequest request) {
         authService.logout(request);
     }

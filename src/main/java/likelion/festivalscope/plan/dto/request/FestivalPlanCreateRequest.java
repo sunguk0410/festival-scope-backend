@@ -8,7 +8,6 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record FestivalPlanCreateRequest(
-        @NotNull Long userId,
         @Size(max = 200) String planName,
         @NotBlank @Size(max = 200) String festivalName,
         @NotNull FestivalStatus festivalStatus,
@@ -21,7 +20,7 @@ public record FestivalPlanCreateRequest(
         @NotNull @DecimalMin("-180.0") @DecimalMax("180.0") BigDecimal longitude,
         LocalDate startDate,
         LocalDate endDate,
-           @PositiveOrZero Long targetVisitorCount,
+        @PositiveOrZero Long targetVisitorCount,
         VenueType venueType,
         @PositiveOrZero Integer capacity,
         List<@NotBlank @Size(max = 20) String> themeCodes,

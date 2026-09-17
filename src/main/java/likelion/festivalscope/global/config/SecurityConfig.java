@@ -3,7 +3,6 @@ package likelion.festivalscope.global.config;
 import likelion.festivalscope.auth.jwt.JwtAuthenticationFilter;
 import likelion.festivalscope.auth.jwt.JwtTokenProvider;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -27,8 +26,10 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs",
                                 "/v3/api-docs/**",
-                        "/api/auth/signup", "/api/auth/login", "/api/auth/reissue", "/api/auth/logout",
-                        "/swagger-ui/**", "/v3/api-docs/**"
+                                "/api/auth/signup",
+                                "/api/auth/login",
+                                "/api/auth/reissue",
+                                "/api/auth/logout"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

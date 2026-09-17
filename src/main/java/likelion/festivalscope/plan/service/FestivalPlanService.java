@@ -1,5 +1,9 @@
 package likelion.festivalscope.plan.service;
 
+import likelion.festivalscope.festival.entity.FestivalTheme;
+import likelion.festivalscope.festival.repository.FestivalThemeRepository;
+import likelion.festivalscope.global.exception.BusinessException;
+import likelion.festivalscope.global.exception.ErrorCode;
 import likelion.festivalscope.global.exception.ResourceNotFoundException;
 import likelion.festivalscope.plan.dto.request.FestivalPlanCreateRequest;
 import likelion.festivalscope.plan.dto.response.FestivalPlanCreateResponse;
@@ -11,13 +15,10 @@ import likelion.festivalscope.plan.repository.FestivalPlanRepository;
 import likelion.festivalscope.plan.repository.FestivalPlanThemeRepository;
 import likelion.festivalscope.user.entity.User;
 import likelion.festivalscope.user.repository.UserRepository;
-import likelion.festivalscope.festival.repository.FestivalThemeRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.core.context.SecurityContextHolder;
-import likelion.festivalscope.global.exception.BusinessException;
-import likelion.festivalscope.global.exception.ErrorCode;
 
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -33,10 +34,15 @@ public class FestivalPlanService {
 
     @Transactional
     public FestivalPlanCreateResponse create(FestivalPlanCreateRequest request) {
-        Object principal = SecurityContextHolder.getContext().getAuthentication() == null ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        if (!(principal instanceof Long userId) || !userId.equals(request.userId())) throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 사용자입니다: " + request.userId()));
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null
+                : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof Long userId)) {
+            throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
         FestivalPlan plan = festivalPlanRepository.save(FestivalPlan.builder()
                 .user(user)
@@ -60,20 +66,20 @@ public class FestivalPlanService {
 
         List<String> themeCodes = request.themeCodes() == null ? List.of() : request.themeCodes();
         themeCodes.stream()
-                .map(theme -> FestivalPlanTheme.builder()
+                .map(themeCode -> FestivalPlanTheme.builder()
                         .festivalPlan(plan)
-                        .themeCode(theme)
-                        .themeTag(festivalThemeRepository.findFirstByThemeCode(theme)
-                                .map(likelion.festivalscope.festival.entity.FestivalTheme::getThemeTag)
+                        .themeCode(themeCode)
+                        .themeTag(festivalThemeRepository.findFirstByThemeCode(themeCode)
+                                .map(FestivalTheme::getThemeTag)
                                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST)))
                         .build())
                 .forEach(festivalPlanThemeRepository::save);
 
         List<String> programNames = request.programNames() == null ? List.of() : request.programNames();
         programNames.stream()
-                .map(program -> FestivalPlanProgram.builder()
+                .map(programName -> FestivalPlanProgram.builder()
                         .festivalPlan(plan)
-                        .programName(program)
+                        .programName(programName)
                         .build())
                 .forEach(festivalPlanProgramRepository::save);
 
