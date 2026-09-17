@@ -4,6 +4,7 @@ import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
 import likelion.festivalscope.analysis.entity.FestivalAnalysisAccessibility;
 import likelion.festivalscope.analysis.entity.FestivalAnalysisDemand;
 import likelion.festivalscope.common.util.GeoDistance;
+import likelion.festivalscope.common.util.RegionNameNormalizer;
 import likelion.festivalscope.external.bus.BusRouteClient;
 import likelion.festivalscope.external.bus.BusStopClient;
 import likelion.festivalscope.external.tourism.RegionalVisitorClient;
@@ -67,15 +68,17 @@ public class DemandFitAnalyzer {
         int startYear = endYear - 4;
         LocalDate from = LocalDate.of(startYear, 1, 1);
         LocalDate to = LocalDate.of(endYear, 12, 31);
-        String area = AREA_CODES.get(plan.getSido());
+        String area = AREA_CODES.entrySet().stream()
+                .filter(entry -> RegionNameNormalizer.sido(entry.getKey()).equals(RegionNameNormalizer.sido(plan.getSido())))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
         if (area == null) {
             throw new AnalysisExecutionException("시도 관광수요 지역 코드를 찾을 수 없습니다: " + plan.getSido());
         }
         regionalVisitorCollector.ensureRecentYearsCollected(endYear, 5);
         List<RegionalVisitorStat> stats = regionalVisitorStatRepository.findAllByBaseYmdBetween(from, to);
-        String targetSignguCode = stats.stream()
-                .filter(row -> plan.getSido().equals(row.getSidoName()) && plan.getSigungu().equals(row.getSignguName()))
-                .map(RegionalVisitorStat::getSignguCode).findFirst().orElse(null);
+        String targetSignguCode = resolveTargetSignguCode(plan, from, to);
         List<RegionalVisitorClient.VisitorRecord> records = stats.stream().map(this::toVisitorRecord).toList();
         // API가 0건을 반환한 경우에도 분석 자체는 성공시키되, 수요 지표는 null로 반환한다.
         AccessibilityData accessibility = accessibility(plan);
@@ -108,6 +111,51 @@ public class DemandFitAnalyzer {
     private RegionalVisitorClient.VisitorRecord toVisitorRecord(RegionalVisitorStat stat) {
         return new RegionalVisitorClient.VisitorRecord(stat.getBaseYmd(), stat.getSignguCode(),
                 stat.getSignguName(), stat.getSidoName(), stat.getVisitorCount());
+    }
+
+    private String resolveTargetSignguCode(FestivalPlan plan, LocalDate from, LocalDate to) {
+        List<String> matchingCodes = regionalVisitorStatRepository
+                .findAllBySignguNameAndBaseYmdBetween(plan.getSigungu(), from, to).stream()
+                .filter(row -> RegionNameNormalizer.sameSido(plan.getSido(), row.getSidoName())
+                        || codeBelongsToSido(plan.getSido(), row.getSignguCode()))
+                .map(RegionalVisitorStat::getSignguCode)
+                .distinct()
+                .toList();
+        if (matchingCodes.size() == 1) {
+            return matchingCodes.get(0);
+        }
+        if (matchingCodes.size() > 1) {
+            throw new AnalysisExecutionException("동일한 시군구명에 여러 signguCode가 존재하여 지역을 식별할 수 없습니다: " + plan.getSigungu());
+        }
+        return null;
+    }
+
+    private boolean codeBelongsToSido(String sido, String signguCode) {
+        if (sido == null || signguCode == null || signguCode.length() < 2) return false;
+        String areaCode = AREA_CODES.entrySet().stream()
+                .filter(entry -> RegionNameNormalizer.sameSido(entry.getKey(), sido))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+        String prefix = areaCode == null ? null : ADMIN_CODE_PREFIXES.get(areaCode);
+        return prefix != null && signguCode.startsWith(prefix);
+    }
+
+    private String normalizeSidoForCode(String sido) {
+        if (sido == null) return "";
+        return sido.replace("특별자치도", "")
+                .replace("특별시", "")
+                .replace("광역시", "")
+                .replace("자치도", "")
+                .replace("도", "")
+                .trim();
+    }
+
+    private String normalizeSido(String sido) {
+        if (sido == null) return "";
+        return sido.replace("특별자치도", "").replace("특별시", "")
+                .replace("광역시", "").replace("자치도", "")
+                .replace("도", "").trim();
     }
 
     private Result build(FestivalPlan plan, List<RegionalVisitorClient.VisitorRecord> records,

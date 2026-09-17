@@ -11,7 +11,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -34,24 +38,35 @@ public class RegionalVisitorCollector {
         LocalDate minDate = repository.findMinDate(from, to);
         LocalDate maxDate = repository.findMaxDate(from, to);
         long actualDays = repository.countDistinctDates(from, to);
+        long rowsWithoutSido = repository.countWithoutSido(from, to);
         boolean completed = minDate != null
                 && maxDate != null
                 && minDate.equals(from)
                 && maxDate.equals(to)
-                && actualDays == expectedDays;
+                && actualDays == expectedDays
+                && rowsWithoutSido == 0;
         if (completed) {
-            log.info("Regional visitor collection skipped: year={}, minDate={}, maxDate={}, distinctDates={}",
-                    year, minDate, maxDate, actualDays);
+            log.info("Regional visitor collection skipped: year={}, minDate={}, maxDate={}, distinctDates={}, rowsWithoutSido={}",
+                    year, minDate, maxDate, actualDays, rowsWithoutSido);
             return;
         }
-        log.info("Regional visitor collection started: year={}, expectedDays={}, minDate={}, maxDate={}, distinctDates={}",
-                year, expectedDays, minDate, maxDate, actualDays);
+        log.info("Regional visitor collection started: year={}, expectedDays={}, minDate={}, maxDate={}, distinctDates={}, rowsWithoutSido={}",
+                year, expectedDays, minDate, maxDate, actualDays, rowsWithoutSido);
         List<RegionalVisitorClient.VisitorRecord> records = client.fetchAll(from, to);
         if (records.isEmpty()) {
             throw new AnalysisExecutionException("Regional visitor API returned no normalized records: year=" + year);
         }
         repository.deleteAllByBaseYmdBetween(from, to);
-        List<RegionalVisitorStat> stats = records.stream().map(record -> RegionalVisitorStat.builder()
+        repository.flush();
+        Map<String, RegionalVisitorClient.VisitorRecord> uniqueRecords = records.stream()
+                .collect(Collectors.toMap(
+                        record -> record.date() + "|" + record.regionCode(),
+                        Function.identity(),
+                        (first, duplicate) -> first,
+                        LinkedHashMap::new));
+        log.info("Regional visitor records normalized for storage: year={}, rawRecordCount={}, uniqueRecordCount={}",
+                year, records.size(), uniqueRecords.size());
+        List<RegionalVisitorStat> stats = uniqueRecords.values().stream().map(record -> RegionalVisitorStat.builder()
                 .baseYmd(record.date())
                 .signguCode(record.regionCode())
                 .signguName(record.regionName())

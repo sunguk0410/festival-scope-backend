@@ -4,6 +4,7 @@ import likelion.festivalscope.festival.entity.*;
 import likelion.festivalscope.festival.repository.*;
 import likelion.festivalscope.plan.entity.*;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
+import likelion.festivalscope.common.util.RegionNameNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -87,8 +88,9 @@ public class TargetVisitorAnalyzer {
     private String themeKey(FestivalTheme t) { return t.getThemeCode() != null && !t.getThemeCode().isBlank() ? "code:" + t.getThemeCode() : key(t.getThemeTag()); }
     private String key(String value) { return value == null ? null : value.trim().toLowerCase(Locale.ROOT); }
     private BigDecimal regionSimilarity(FestivalPlan p, Festival f) {
-        if (f == null || !same(p.getSido(), f.getSido())) return BigDecimal.ZERO.setScale(2);
-        return same(p.getSigungu(), f.getSigungu()) ? BigDecimal.valueOf(100) : BigDecimal.valueOf(70);
+        if (f == null || !RegionNameNormalizer.sameSido(p.getSido(), f.getSido())) return BigDecimal.ZERO.setScale(2);
+        return RegionNameNormalizer.sameSigungu(p.getSigungu(), f.getSigungu())
+                ? BigDecimal.valueOf(100) : BigDecimal.valueOf(70);
     }
     private BigDecimal periodSimilarity(FestivalPlan p, FestivalHistory h) {
         if (p.getStartDate() == null) return BigDecimal.ZERO.setScale(2);
@@ -98,7 +100,9 @@ public class TargetVisitorAnalyzer {
     }
     private boolean sameTargetHistory(FestivalPlan p, FestivalHistory h) {
         return h.getFestival() != null && p.getStartDate() != null && h.getYear() == p.getStartDate().getYear()
-                && same(p.getFestivalName(), h.getFestival().getFestivalName()) && same(p.getSido(), h.getFestival().getSido()) && same(p.getSigungu(), h.getFestival().getSigungu());
+                && same(p.getFestivalName(), h.getFestival().getFestivalName())
+                && RegionNameNormalizer.sameSido(p.getSido(), h.getFestival().getSido())
+                && RegionNameNormalizer.sameSigungu(p.getSigungu(), h.getFestival().getSigungu());
     }
     private boolean same(String a, String b) { return normalize(a).equals(normalize(b)); }
     private String normalize(String value) { return value == null ? "" : value.replace(" ", "").trim(); }

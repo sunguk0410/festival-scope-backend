@@ -1,5 +1,6 @@
 package likelion.festivalscope.external.tourism;
 
+import likelion.festivalscope.common.util.RegionNameNormalizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
@@ -25,6 +26,17 @@ import java.util.stream.Collectors;
 @Component
 public class RegionalVisitorClient {
     private static final DateTimeFormatter DATE = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final java.util.Map<String, String> SIDO_NAMES = java.util.Map.ofEntries(
+            java.util.Map.entry("11", "서울특별시"), java.util.Map.entry("26", "부산광역시"),
+            java.util.Map.entry("27", "대구광역시"), java.util.Map.entry("28", "인천광역시"),
+            java.util.Map.entry("29", "광주광역시"), java.util.Map.entry("30", "대전광역시"),
+            java.util.Map.entry("31", "울산광역시"), java.util.Map.entry("36", "세종특별자치시"),
+            java.util.Map.entry("41", "경기도"), java.util.Map.entry("42", "강원특별자치도"),
+            java.util.Map.entry("43", "충청북도"), java.util.Map.entry("44", "충청남도"),
+            java.util.Map.entry("45", "전라북도"), java.util.Map.entry("46", "전라남도"),
+            java.util.Map.entry("47", "경상북도"), java.util.Map.entry("48", "경상남도"),
+            java.util.Map.entry("50", "제주특별자치도"), java.util.Map.entry("51", "강원특별자치도"),
+            java.util.Map.entry("52", "전북특별자치도"));
     private final RestClient client;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String baseUrl;
@@ -199,12 +211,23 @@ public class RegionalVisitorClient {
 
     private Raw raw(JsonNode node) {
         try {
-            String date = first(node, "baseYmd");
-            String code = first(node, "signguCode", "signguCd");
-            String name = first(node, "signguNm", "signguName");
+            String date = trimToNull(first(node, "baseYmd"));
+            String code = trimToNull(first(node, "signguCode", "signguCd"));
+            String name = trimToNull(first(node, "signguNm", "signguName"));
             if (date == null || code == null || name == null) return null;
-            return new Raw(parseDate(date), code, name,
-                    first(node, "areaNm", "sidoNm"), text(node, "touDivCd"), text(node, "touDivNm"),
+            String areaCode = trimToNull(first(node, "areaCode", "sidoCode", "ctprvnCode"));
+            String sido = trimToNull(first(node, "areaNm", "sidoNm", "sidoName", "sido"));
+            if (sido == null && areaCode != null) {
+                sido = SIDO_NAMES.get(areaCode);
+            }
+            if (sido == null && code.length() >= 2) {
+                sido = SIDO_NAMES.get(code.substring(0, 2));
+            }
+            if (sido != null) {
+                sido = RegionNameNormalizer.sido(sido);
+            }
+            return new Raw(parseDate(date), code, name, sido,
+                    text(node, "touDivCd"), text(node, "touDivNm"),
                     parseCount(text(node, "touNum")));
         } catch (Exception e) {
             return null;
@@ -279,6 +302,12 @@ public class RegionalVisitorClient {
             if (value != null && !value.isBlank()) return value;
         }
         return null;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
     }
 
     public record VisitorRecord(LocalDate date, String regionCode, String regionName, String sidoName, long visitorCount) {}
