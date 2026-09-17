@@ -18,13 +18,33 @@ import likelion.festivalscope.analysis.service.FestivalAnalysisService;
 import likelion.festivalscope.global.response.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
+import likelion.festivalscope.analysis.dto.response.AnalysisListResponse;
 
 @RestController
 @RequiredArgsConstructor
 @Tag(name = "Festival Analysis", description = "축제 기획안 분석 실행 및 결과 조회 API")
 public class FestivalAnalysisController {
     private final FestivalAnalysisService festivalAnalysisService;
+
+    @Operation(summary = "사용자 분석 목록 조회", description = "로그인한 사용자가 완료한 축제 분석 목록을 최신 기획안 입력일 순으로 조회합니다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "분석 목록 조회 성공"),
+            @ApiResponse(responseCode = "401", description = "인증되지 않은 요청", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/api/analyses")
+    public Page<AnalysisListResponse> getAnalysisList(
+            @Parameter(description = "페이지 번호(0부터 시작)", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "페이지 크기", example = "10")
+            @RequestParam(defaultValue = "10") int size) {
+        if (page < 0 || size < 1 || size > 100) {
+            throw new IllegalArgumentException("page must be >= 0 and size must be between 1 and 100");
+        }
+        return festivalAnalysisService.getAnalysisList(PageRequest.of(page, size));
+    }
 
     @Operation(summary = "축제 기획안 분석 실행", description = "저장된 축제 기획안을 기반으로 분석을 실행합니다. 현재 TARGET_VISITOR와 TREND_FIT 분석이 구현되어 있습니다.")
     @ApiResponses({

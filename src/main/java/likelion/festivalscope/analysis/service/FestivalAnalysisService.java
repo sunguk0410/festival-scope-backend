@@ -30,6 +30,8 @@ import likelion.festivalscope.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -65,6 +67,17 @@ public class FestivalAnalysisService {
     private final FestivalAnalysisPoiRepository festivalAnalysisPoiRepository;
     private final TourismLinkageAnalyzer tourismLinkageAnalyzer;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Transactional(readOnly = true)
+    public Page<likelion.festivalscope.analysis.dto.response.AnalysisListResponse> getAnalysisList(Pageable pageable) {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof Long userId)) {
+            throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        }
+        return festivalAnalysisRepository.findCompletedAnalysisList(userId, AnalysisStatus.COMPLETED, pageable)
+                .map(likelion.festivalscope.analysis.dto.response.AnalysisListResponse::from);
+    }
 
     @Transactional(noRollbackFor = AnalysisExecutionException.class)
     public Long execute(Long planId) {
