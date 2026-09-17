@@ -1,0 +1,126 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: festival-scope
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: festival_scope
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Test
+        env:
+          DB_URL: jdbc:mysql://127.0.0.1:3306/festival_scope?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+          DB_USERNAME: root
+          DB_PASSWORD: root
+
+          JWT_SECRET: github-actions-test-jwt-secret-key-2026
+          JWT_ACCESS_TOKEN_EXPIRATION: 3600000
+          JWT_REFRESH_TOKEN_EXPIRATION: 1209600000
+
+          NAVER_CLIENT_ID: ''
+          NAVER_CLIENT_SECRET: ''
+          TOURISM_VISITOR_SERVICE_KEY: ''
+          BUS_API_KEY: ''
+          BUS_ROUTE_API_KEY: ''
+          KMA_ASOS_API_KEY: ''
+
+        run: ./gradlew test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build --platform linux/amd64 \
+            -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $REGISTRY/$ECR_REPOSITORY:latest \
+            .
+
+          docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+
+            cd ~/deploy
+
+            echo "=== ECR Login ==="
+
+            aws ecr get-login-password --region ap-northeast-2 | \
+              docker login \
+              --username AWS \
+              --password-stdin \
+              ${{ steps.ecr-login.outputs.registry }}
+
+            echo "=== Pull latest image ==="
+
+            docker compose -f docker-compose.prod.yml pull app
+
+            echo "=== Deploy ==="
+
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "=== Waiting for Spring Boot ==="
+
+            sleep 20
+
+            echo "=== Health Check ==="
+
+            curl -f http://localhost:8080/actuator/health
+
+            echo ""
+            echo "=== Remove unused images ==="
+
+            docker image prune -f
+
+            echo "=== Deployment completed ==="

@@ -13,8 +13,8 @@ COPY src src
 RUN ./gradlew clean bootJar -x test
 
 # 2단계: 실행 (가벼운 JRE 이미지에 jar만 복사)
-FROM --platform=linux/amd64 eclipse-temurin:17-jre
+FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=build /app/build/libs/*.jar app.jar
+COPY --from=build /app/build/libs/app.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
