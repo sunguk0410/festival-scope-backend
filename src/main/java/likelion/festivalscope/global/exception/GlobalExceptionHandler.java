@@ -1,15 +1,22 @@
 package likelion.festivalscope.global.exception;
 
+import likelion.festivalscope.global.response.ErrorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ErrorResponse<Object>> handleBusiness(BusinessException exception) {
+        ErrorCode code = exception.getErrorCode();
+        return ResponseEntity.status(code.getStatus()).body(ErrorResponse.of(code.getCode(), exception.getMessage(), null));
+    }
     @ResponseStatus(HttpStatus.NOT_FOUND)
     @ExceptionHandler(ResourceNotFoundException.class)
     public Map<String, String> handleNotFound(ResourceNotFoundException exception) {

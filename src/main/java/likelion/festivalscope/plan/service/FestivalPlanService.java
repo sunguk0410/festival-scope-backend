@@ -14,6 +14,9 @@ import likelion.festivalscope.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.context.SecurityContextHolder;
+import likelion.festivalscope.global.exception.BusinessException;
+import likelion.festivalscope.global.exception.ErrorCode;
 
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -28,6 +31,8 @@ public class FestivalPlanService {
 
     @Transactional
     public FestivalPlanCreateResponse create(FestivalPlanCreateRequest request) {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof Long userId) || !userId.equals(request.userId())) throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
         User user = userRepository.findById(request.userId())
                 .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 사용자입니다: " + request.userId()));
 

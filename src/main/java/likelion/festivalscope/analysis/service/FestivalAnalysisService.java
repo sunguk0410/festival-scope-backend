@@ -22,11 +22,13 @@ import likelion.festivalscope.analysis.repository.*;
 import likelion.festivalscope.plan.repository.*;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
+import likelion.festivalscope.global.exception.ErrorCode;
 import likelion.festivalscope.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -62,6 +64,7 @@ public class FestivalAnalysisService {
     public Long execute(Long planId) {
         FestivalPlan plan = festivalPlanRepository.findById(planId)
                 .orElseThrow(() -> new ResourceNotFoundException("湲고쉷?덉쓣 李얠쓣 ???놁뒿?덈떎: " + planId));
+        verifyOwner(plan.getUser().getUserId());
         LocalDateTime startedAt = LocalDateTime.now();
         FestivalAnalysis analysis = festivalAnalysisRepository.save(FestivalAnalysis.builder()
                 .festivalPlan(plan)
@@ -287,6 +290,20 @@ public class FestivalAnalysisService {
     private FestivalAnalysis getAnalysisEntity(Long analysisId) {
         return festivalAnalysisRepository.findById(analysisId)
                 .orElseThrow(() -> new ResourceNotFoundException("遺꾩꽍??李얠쓣 ???놁뒿?덈떎: " + analysisId));
+    }
+
+    public void verifyAnalysisOwner(Long analysisId) {
+        FestivalAnalysis analysis = festivalAnalysisRepository.findById(analysisId)
+                .orElseThrow(() -> new ResourceNotFoundException("Analysis not found: " + analysisId));
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof Long userId)) throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        if (!userId.equals(analysis.getFestivalPlan().getUser().getUserId())) throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
+    }
+
+    private void verifyOwner(Long ownerId) {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof Long userId)) throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        if (!userId.equals(ownerId)) throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
     }
 
     @Transactional(readOnly = true)

@@ -44,6 +44,7 @@ public class FestivalAnalysisController {
     })
     @GetMapping("/api/analyses/{analysisId}")
     public FestivalAnalysisResponse getAnalysis(@Parameter(description = "조회할 FestivalAnalysis ID", example = "1") @PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getAnalysis(analysisId);
     }
 
@@ -54,6 +55,7 @@ public class FestivalAnalysisController {
     })
     @GetMapping("/api/analyses/{analysisId}/items/TARGET_VISITOR")
     public TargetVisitorResponse getTargetVisitor(@Parameter(description = "조회할 FestivalAnalysis ID", example = "1") @PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getTargetVisitor(analysisId);
     }
 
@@ -65,6 +67,7 @@ public class FestivalAnalysisController {
     })
     @GetMapping("/api/analyses/{analysisId}/items/TREND_FIT")
     public TrendFitResponse getTrendFit(@Parameter(description = "조회할 FestivalAnalysis ID", example = "1") @PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getTrendFit(analysisId);
     }
     @Operation(summary = "지역·시기 관광수요 적합성 상세 조회", description = "동일 광역권 유사 행정지역 대비 관광수요, 최근 3개년 월별 및 개최월 주차별 관광수요, 버스·도시철도 접근성을 조회합니다. score는 정책 미정으로 null일 수 있으며 0점을 의미하지 않습니다. weeklyDemand의 referenceOnly=true는 5주차 실제 일수가 3일 미만이라 추천 주차 선정에서 제외된 참고 데이터입니다.")
@@ -75,18 +78,21 @@ public class FestivalAnalysisController {
     })
     @GetMapping("/api/analyses/{analysisId}/items/DEMAND_FIT")
     public DemandFitResponse getDemandFit(@Parameter(description = "조회할 FestivalAnalysis ID", example = "1") @PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getDemandFit(analysisId);
     }
 
     @Operation(summary = "WEATHER_RISK 상세 조회")
     @GetMapping("/api/analyses/{analysisId}/items/WEATHER_RISK")
     public WeatherRiskResponse getWeatherRisk(@PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getWeatherRisk(analysisId);
     }
 
     @Operation(summary = "CONFLICT_RISK 상세 조회")
     @GetMapping("/api/analyses/{analysisId}/items/CONFLICT_RISK")
     public ConflictRiskResponse getConflictRisk(@PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getConflictRisk(analysisId);
     }
 
