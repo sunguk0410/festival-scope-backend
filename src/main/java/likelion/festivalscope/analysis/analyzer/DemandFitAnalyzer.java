@@ -89,7 +89,7 @@ public class DemandFitAnalyzer {
                                 FestivalAnalysisAccessibility saved) {
         List<RegionalYear> regionYears = rows.stream()
                 .filter(r -> r.getDemandType().name().equals("REGIONAL") && r.getVisitorCount() != null)
-                .map(r -> new RegionalYear(r.getSigungu(), r.getRegionCode(), r.getStatYear(), r.getVisitorCount()))
+                .map(r -> new RegionalYear(r.getSigungu(), r.getRegionCode(), r.getSido(), r.getStatYear(), r.getVisitorCount()))
                 .toList();
         List<RegionalVisitorClient.VisitorRecord> daily = rows.stream()
                 .filter(r -> r.getDemandType().name().equals("SEASONAL")
@@ -170,7 +170,7 @@ public class DemandFitAnalyzer {
                             RegionalVisitorClient.VisitorRecord first = entry.getValue().get(0);
                             long total = entry.getValue().stream()
                                     .mapToLong(RegionalVisitorClient.VisitorRecord::visitorCount).sum();
-                            return new RegionalYear(first.regionName(), first.regionCode(), first.date().getYear(), total);
+                            return new RegionalYear(first.regionName(), first.regionCode(), first.sidoName(), first.date().getYear(), total);
                         }))
                 .toList();
         List<RegionalVisitorClient.VisitorRecord> daily = records.stream()
@@ -185,6 +185,7 @@ public class DemandFitAnalyzer {
         String target = plan.getSigungu();
         String type = adminType(target);
         Map<String, Long> regionValues = years.stream()
+                .filter(y -> RegionNameNormalizer.sameSido(plan.getSido(), y.sido()))
                 .filter(y -> adminType(y.name()).equals(type))
                 .collect(Collectors.groupingBy(y -> y.code() + "|" + y.name(),
                         Collectors.summingLong(RegionalYear::value)));
@@ -342,6 +343,6 @@ public class DemandFitAnalyzer {
                          DemandFitResponse.Accessibility accessibility,
                          List<RegionalYear> regionalYears,
                          List<RegionalVisitorClient.VisitorRecord> dailyRecords) {}
-    public record RegionalYear(String name, String code, int year, long value) {}
+    public record RegionalYear(String name, String code, String sido, int year, long value) {}
     private record AccessibilityData(DemandFitResponse.Bus bus, DemandFitResponse.Rail rail) {}
 }
