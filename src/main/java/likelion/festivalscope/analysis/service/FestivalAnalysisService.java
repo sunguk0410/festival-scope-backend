@@ -104,6 +104,7 @@ public class FestivalAnalysisService {
                         .themeSimilarity(candidate.themeSimilarity())
                         .regionSimilarity(candidate.regionSimilarity())
                         .periodSimilarity(candidate.periodSimilarity())
+                        .comparisonType(candidate.comparisonType())
                         .rankOrder(index + 1)
                         .build());
             }
@@ -169,18 +170,57 @@ public class FestivalAnalysisService {
                 .orElseThrow(() -> new ResourceNotFoundException("TARGET_VISITOR ??ぉ??李얠쓣 ???놁뒿?덈떎: " + analysisId));
         FestivalAnalysisTargetVisitor snapshot = festivalAnalysisTargetVisitorRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
                 .orElseThrow(() -> new AnalysisExecutionException("TARGET_VISITOR snapshot not found: " + analysisId));
-        List<TargetVisitorResponse.SimilarFestival> similarResponses = festivalAnalysisSimilarRepository
+        List<FestivalAnalysisSimilar> savedSimilar = festivalAnalysisSimilarRepository
                 .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByRankOrderAsc(item.getFestivalAnalysisItemId()).stream()
-                .filter(similar -> similar.getRankOrder() <= 5)
-                .map(similar -> new TargetVisitorResponse.SimilarFestival(similar.getRankOrder(),
+                .toList();
+        List<TargetVisitorResponse.SameFestivalHistory> sameFestivalResponses = savedSimilar.stream()
+                .filter(similar -> similar.getComparisonType() == TargetVisitorComparisonType.SAME_FESTIVAL)
+                .map(similar -> new TargetVisitorResponse.SameFestivalHistory(0,
                         similar.getFestival() == null ? null : similar.getFestival().getFestivalId(),
                         similar.getFestivalHistory() == null ? null : similar.getFestivalHistory().getFestivalHistoryId(),
-                        similar.getFestivalName(), similar.getYear(), similar.getBudget(), similar.getVisitorCount(),
-                        similar.getThemeSimilarity(), similar.getRegionSimilarity(), similar.getPeriodSimilarity(), similar.getSimilarityScore())).toList();
+                        similar.getFestivalHistory() == null ? similar.getFestivalName()
+                                : similar.getFestivalHistory().getFestivalNameRaw(),
+                        similar.getYear(), similar.getBudget(), similar.getVisitorCount())).toList();
+        List<TargetVisitorResponse.SimilarFestival> similarResponses = savedSimilar.stream()
+                .filter(similar -> similar.getComparisonType() != TargetVisitorComparisonType.SAME_FESTIVAL)
+                .limit(5)
+                .map(similar -> toSimilarFestivalResponse(similar, 0)).toList();
+        sameFestivalResponses = reRankSameFestival(sameFestivalResponses);
+        similarResponses = reRank(similarResponses);
         return new TargetVisitorResponse(item.getItemType(), item.getScore(), new TargetVisitorResponse.TargetVisitor(
                 snapshot.getTargetVisitorCount(), snapshot.getSimilarFestivalCount(), snapshot.getVisitorDataCount(),
                 snapshot.getVisitorAverage(), snapshot.getVisitorMedian(), snapshot.getVisitorMin(), snapshot.getVisitorMax(),
-                snapshot.getGapRate(), snapshot.getSimilarityThreshold(), similarResponses));
+                snapshot.getGapRate(), snapshot.getSimilarityThreshold(), sameFestivalResponses, similarResponses));
+    }
+
+    private TargetVisitorResponse.SimilarFestival toSimilarFestivalResponse(FestivalAnalysisSimilar similar, int rank) {
+        return new TargetVisitorResponse.SimilarFestival(rank,
+                similar.getFestival() == null ? null : similar.getFestival().getFestivalId(),
+                similar.getFestivalHistory() == null ? null : similar.getFestivalHistory().getFestivalHistoryId(),
+                similar.getFestivalName(), similar.getYear(), similar.getBudget(), similar.getVisitorCount(),
+                similar.getThemeSimilarity(), similar.getRegionSimilarity(), similar.getPeriodSimilarity(), similar.getSimilarityScore());
+    }
+
+    private List<TargetVisitorResponse.SimilarFestival> reRank(List<TargetVisitorResponse.SimilarFestival> festivals) {
+        return java.util.stream.IntStream.range(0, festivals.size())
+                .mapToObj(index -> {
+                    TargetVisitorResponse.SimilarFestival festival = festivals.get(index);
+                    return new TargetVisitorResponse.SimilarFestival(index + 1, festival.festivalId(),
+                            festival.festivalHistoryId(), festival.festivalName(), festival.year(), festival.budget(),
+                            festival.visitorCount(), festival.themeSimilarity(), festival.regionSimilarity(),
+                            festival.periodSimilarity(), festival.similarityScore());
+                }).toList();
+    }
+
+    private List<TargetVisitorResponse.SameFestivalHistory> reRankSameFestival(
+            List<TargetVisitorResponse.SameFestivalHistory> festivals) {
+        return java.util.stream.IntStream.range(0, festivals.size())
+                .mapToObj(index -> {
+                    TargetVisitorResponse.SameFestivalHistory festival = festivals.get(index);
+                    return new TargetVisitorResponse.SameFestivalHistory(index + 1, festival.festivalId(),
+                            festival.festivalHistoryId(), festival.festivalName(), festival.year(),
+                            festival.budget(), festival.visitorCount());
+                }).toList();
     }
 
     @Transactional(readOnly = true)

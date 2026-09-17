@@ -26,4 +26,7 @@ public class FestivalAnalysisSimilar extends CreatedAtEntity {
     @Column(name = "region_similarity", precision = 5, scale = 2) private BigDecimal regionSimilarity;
     @Column(name = "period_similarity", precision = 5, scale = 2) private BigDecimal periodSimilarity;
     @Column(name = "rank_order", nullable = false) private Integer rankOrder;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "comparison_type", length = 20)
+    private TargetVisitorComparisonType comparisonType;
 }
