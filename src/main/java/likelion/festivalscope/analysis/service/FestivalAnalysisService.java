@@ -5,11 +5,13 @@ import likelion.festivalscope.analysis.analyzer.TargetVisitorAnalyzer;
 import likelion.festivalscope.analysis.analyzer.TrendAnalysisResult;
 import likelion.festivalscope.analysis.analyzer.TrendFitAnalyzer;
 import likelion.festivalscope.analysis.analyzer.DemandFitAnalyzer;
+import likelion.festivalscope.analysis.analyzer.TourismLinkageAnalyzer;
 import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
 import likelion.festivalscope.analysis.weather.WeatherRiskAnalyzer;
 import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
 import likelion.festivalscope.analysis.conflict.ScheduleConflictAnalyzer;
 import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
+import likelion.festivalscope.analysis.dto.response.TourismLinkageResponse;
 import likelion.festivalscope.analysis.dto.response.FestivalAnalysisResponse;
 import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
@@ -18,6 +20,7 @@ import likelion.festivalscope.plan.entity.*;
 import likelion.festivalscope.festival.entity.*;
 import likelion.festivalscope.analysis.entity.AnalysisItemType;
 import likelion.festivalscope.analysis.entity.AnalysisStatus;
+import likelion.festivalscope.external.tourism.TourApiClient;
 import likelion.festivalscope.analysis.repository.*;
 import likelion.festivalscope.plan.repository.*;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
@@ -58,6 +61,9 @@ public class FestivalAnalysisService {
     private final FestivalAnalysisConflictRepository festivalAnalysisConflictRepository;
     private final FestivalAnalysisConflictEventRepository festivalAnalysisConflictEventRepository;
     private final ScheduleConflictAnalyzer scheduleConflictAnalyzer;
+    private final FestivalAnalysisTourismLinkageRepository festivalAnalysisTourismLinkageRepository;
+    private final FestivalAnalysisPoiRepository festivalAnalysisPoiRepository;
+    private final TourismLinkageAnalyzer tourismLinkageAnalyzer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(noRollbackFor = AnalysisExecutionException.class)
@@ -110,6 +116,11 @@ public class FestivalAnalysisService {
             }
             saveTargetVisitorSnapshot(targetVisitorItem, plan, result);
 
+            FestivalAnalysisItem tourismItem = items.stream()
+                    .filter(item -> item.getItemType() == AnalysisItemType.TOURISM_LINKAGE)
+                    .findFirst().orElseThrow();
+            saveTourismLinkageSnapshot(tourismItem, tourismLinkageAnalyzer.analyze(plan));
+
             FestivalAnalysisItem trendFitItem = items.stream()
                     .filter(item -> item.getItemType() == AnalysisItemType.TREND_FIT)
                     .findFirst()
@@ -141,6 +152,30 @@ public class FestivalAnalysisService {
             }
             throw new AnalysisExecutionException("異뺤젣 遺꾩꽍 ?ㅽ뻾???ㅽ뙣?덉뒿?덈떎.", exception);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public TourismLinkageResponse getTourismLinkage(Long analysisId) {
+        FestivalAnalysisItem item = festivalAnalysisItemRepository
+                .findByFestivalAnalysis_FestivalAnalysisIdAndItemType(analysisId, AnalysisItemType.TOURISM_LINKAGE)
+                .orElseThrow(() -> new ResourceNotFoundException("TOURISM_LINKAGE item not found: " + analysisId));
+        FestivalAnalysisTourismLinkage snapshot = festivalAnalysisTourismLinkageRepository
+                .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
+                .orElseThrow(() -> new AnalysisExecutionException("TOURISM_LINKAGE snapshot not found: " + analysisId));
+        List<TourismLinkageResponse.Poi> pois = festivalAnalysisPoiRepository
+                .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByDistanceMAsc(item.getFestivalAnalysisItemId())
+                .stream().map(this::toTourismPoi).toList();
+        return new TourismLinkageResponse(item.getItemType(), item.getScore(), new TourismLinkageResponse.TourismLinkage(
+                snapshot.getTotalCandidatePoiCount(), snapshot.getTourismCultureCount(), snapshot.getFoodShoppingCount(),
+                snapshot.getAccommodationCount(), snapshot.getTourismLinkageSummary(), snapshot.getConsumptionLinkageSummary(),
+                snapshot.getStayLinkageSummary(), pois.stream().filter(p -> p.poiType() == PoiType.TOURIST_ATTRACTION || p.poiType() == PoiType.CULTURAL_FACILITY).limit(5).toList(),
+                pois.stream().filter(p -> p.poiType() == PoiType.RESTAURANT || p.poiType() == PoiType.SHOPPING).limit(5).toList(),
+                pois.stream().filter(p -> p.poiType() == PoiType.ACCOMMODATION).limit(5).toList()));
+    }
+
+    private TourismLinkageResponse.Poi toTourismPoi(FestivalAnalysisPoi poi) {
+        return new TourismLinkageResponse.Poi(poi.getContentId(), poi.getPoiName(), poi.getContentTypeId(), poi.getPoiType(),
+                poi.getLinkageType(), poi.getDistanceM(), poi.getLatitude(), poi.getLongitude(), poi.getAddress(), poi.getImageUrl());
     }
 
     @Transactional(readOnly = true)
@@ -311,12 +346,49 @@ public class FestivalAnalysisService {
                 .visitorAverage(result.visitorAverage()).visitorMedian(result.visitorMedian())
                 .visitorMin(result.visitorMin()).visitorMax(result.visitorMax()).gapRate(result.gapRate())
                 .similarityThreshold(result.similarityThreshold()).build());
-        log.info("TARGET_VISITOR snapshot: candidates={}, visitorDataCount={}, average={}, median={}, targetVisitor={}, gapRate={}, top5={}",
+        List<TargetVisitorAnalyzer.Candidate> sameFestivalHistories = result.candidates().stream()
+                .filter(TargetVisitorAnalyzer.Candidate::sameFestival)
+                .toList();
+        List<TargetVisitorAnalyzer.Candidate> topSimilarFestivals = result.candidates().stream()
+                .filter(candidate -> !candidate.sameFestival())
+                .limit(5)
+                .toList();
+        log.info("TARGET_VISITOR snapshot: candidates={}, visitorDataCount={}, average={}, median={}, targetVisitor={}, gapRate={}",
                 result.candidates().size(), visitorDataCount, result.visitorAverage(), result.visitorMedian(),
-                plan.getTargetVisitorCount(), result.gapRate(), result.candidates().stream().limit(5)
-                        .map(c -> (c.festival() == null ? c.history().getFestivalNameRaw() : c.festival().getFestivalName())
-                                + "(" + c.history().getYear() + ") budget=" + c.history().getBudget()
-                                + ", visitors=" + c.history().getVisitorCount() + ", score=" + c.similarityScore()).toList());
+                plan.getTargetVisitorCount(), result.gapRate());
+        log.info("TARGET_VISITOR sameFestivalHistories={}", sameFestivalHistories.stream()
+                .map(this::formatTargetVisitorCandidate).toList());
+        log.info("TARGET_VISITOR topSimilarFestivals={}", topSimilarFestivals.stream()
+                .map(this::formatTargetVisitorCandidate).toList());
+    }
+
+    private String formatTargetVisitorCandidate(TargetVisitorAnalyzer.Candidate candidate) {
+        return (candidate.festival() == null ? candidate.history().getFestivalNameRaw() : candidate.festival().getFestivalName())
+                + "(" + candidate.history().getYear() + ") festivalId="
+                + (candidate.festival() == null ? null : candidate.festival().getFestivalId())
+                + ", budget=" + candidate.history().getBudget()
+                + ", visitors=" + candidate.history().getVisitorCount()
+                + ", score=" + candidate.similarityScore();
+    }
+
+    private void saveTourismLinkageSnapshot(FestivalAnalysisItem item, TourismLinkageAnalyzer.Result result) {
+        festivalAnalysisTourismLinkageRepository.save(FestivalAnalysisTourismLinkage.builder()
+                .festivalAnalysisItem(item)
+                .totalCandidatePoiCount(result.totalCandidatePoiCount())
+                .tourismCultureCount(result.tourismCultureCount())
+                .foodShoppingCount(result.foodShoppingCount())
+                .accommodationCount(result.accommodationCount())
+                .tourismLinkageSummary(result.tourismLinkageSummary())
+                .consumptionLinkageSummary(result.consumptionLinkageSummary())
+                .stayLinkageSummary(result.stayLinkageSummary())
+                .build());
+        festivalAnalysisPoiRepository.saveAll(result.candidates().stream().map(candidate -> {
+            TourApiClient.Poi poi = candidate.poi();
+            return FestivalAnalysisPoi.builder().festivalAnalysisItem(item).contentId(poi.contentId())
+                    .contentTypeId(poi.contentTypeId()).poiName(poi.title()).poiType(candidate.poiType())
+                    .distanceM(candidate.distanceM()).latitude(poi.latitude()).longitude(poi.longitude())
+                    .address(poi.address()).imageUrl(poi.imageUrl()).linkageType(candidate.linkageType()).build();
+        }).toList());
     }
 
     private void saveDemandSnapshots(FestivalAnalysisItem item, FestivalPlan plan, DemandFitAnalyzer.Result result) {

@@ -13,6 +13,7 @@ import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
 import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
 import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
 import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
+import likelion.festivalscope.analysis.dto.response.TourismLinkageResponse;
 import likelion.festivalscope.analysis.service.FestivalAnalysisService;
 import likelion.festivalscope.global.response.ErrorResponse;
 import lombok.RequiredArgsConstructor;
@@ -95,8 +96,28 @@ public class FestivalAnalysisController {
         festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getConflictRisk(analysisId);
     }
+    /*
 
     @Operation(summary = "WEATHER_RISK API 테스트", description = "분석 결과나 snapshot을 저장하지 않고 축제 계획의 좌표와 기간으로 날씨 분석만 실행합니다.")
+    */
+    @Operation(
+            summary = "관광 연계 잠재력 상세 조회",
+            description = "분석 당시 저장된 TourAPI 위치기반 관광정보 snapshot을 조회합니다. 외부 API를 다시 호출하지 않으며, 관광·문화 / 음식·쇼핑 / 숙박 후보 POI는 각 그룹별 최대 5개를 거리순으로 반환합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "TOURISM_LINKAGE 상세 조회 성공", content = @Content(schema = @Schema(implementation = likelion.festivalscope.global.response.ApiResponse.class))),
+            @ApiResponse(responseCode = "401", description = "인증되지 않은 요청", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "분석 결과에 대한 접근 권한 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "분석 또는 TOURISM_LINKAGE snapshot을 찾을 수 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/api/analyses/{analysisId}/items/TOURISM_LINKAGE")
+    public TourismLinkageResponse getTourismLinkage(
+            @Parameter(description = "조회할 FestivalAnalysis ID", example = "1")
+            @PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
+        return festivalAnalysisService.getTourismLinkage(analysisId);
+    }
+
     @GetMapping("/api/festival-plans/{planId}/weather-risk/test")
     public WeatherRiskResponse testWeatherRisk(@PathVariable Long planId) {
         return festivalAnalysisService.testWeatherRisk(planId);
