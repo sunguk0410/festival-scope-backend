@@ -112,15 +112,24 @@ jobs:
 
             echo "=== Waiting for Spring Boot ==="
 
-            sleep 20
+            for i in {1..18}; do
+              if curl -fsS http://localhost:8080/actuator/health; then
+                echo ""
+                echo "Health check passed"
+                docker image prune -f
+                exit 0
+              fi
 
-            echo "=== Health Check ==="
+              echo "Health check failed. Retry $i/18..."
+              sleep 5
+            done
 
-            curl -f http://localhost:8080/actuator/health
+            echo "Health check failed after 90 seconds"
 
-            echo ""
-            echo "=== Remove unused images ==="
+            echo "=== Container status ==="
+            docker compose -f docker-compose.prod.yml ps
 
-            docker image prune -f
+            echo "=== Application logs ==="
+            docker compose -f docker-compose.prod.yml logs --tail=150 app
 
-            echo "=== Deployment completed ==="
+            exit 1
