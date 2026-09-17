@@ -1,0 +1,52 @@
+services:
+  app:
+    # 로컬에서는 Dockerfile로 직접 빌드합니다.
+    build: .
+    # EC2에서는 build 대신 ECR image를 사용하면 됩니다.
+    # image: <계정ID>.dkr.ecr.ap-northeast-2.amazonaws.com/festival-scope:latest
+    platform: linux/amd64
+    ports:
+      - "8080:8080"
+    environment:
+      # 컨테이너 간 통신에서는 localhost가 아니라 mysql 서비스명을 사용합니다.
+      DB_URL: jdbc:mysql://mysql:3306/festival_scope?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+      DB_USERNAME: ${DB_USERNAME:-root}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-3600000}
+      JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-1209600000}
+
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      TOURISM_VISITOR_SERVICE_KEY: ${TOURISM_VISITOR_SERVICE_KEY:-}
+      BUS_API_KEY: ${BUS_API_KEY:-}
+      BUS_STOP_API_URL: ${BUS_STOP_API_URL:-https://apis.data.go.kr/1613000/BusStop/getBusStop}
+      BUS_ROUTE_API_KEY: ${BUS_ROUTE_API_KEY:-}
+      BUS_ROUTE_OPERATION_DATE: ${BUS_ROUTE_OPERATION_DATE:-}
+      BUS_ROUTE_CTPV_CODE: ${BUS_ROUTE_CTPV_CODE:-}
+      BUS_ROUTE_SGG_CODE: ${BUS_ROUTE_SGG_CODE:-}
+      KMA_ASOS_API_KEY: ${KMA_ASOS_API_KEY:-}
+      KMA_ASOS_API_URL: ${KMA_ASOS_API_URL:-https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList}
+      WEATHER_ANALYSIS_YEARS: ${WEATHER_ANALYSIS_YEARS:-5}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: on-failure:5
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      MYSQL_DATABASE: festival_scope
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: on-failure:5
+
+volumes:
+  mysql-data:
