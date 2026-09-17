@@ -1,129 +1,108 @@
 package likelion.festivalscope.analysis.analyzer;
 
-import likelion.festivalscope.analysis.entity.*;
-import likelion.festivalscope.plan.entity.*;
 import likelion.festivalscope.festival.entity.*;
-import likelion.festivalscope.festival.repository.FestivalHistoryRepository;
-import likelion.festivalscope.festival.repository.FestivalRepository;
-import likelion.festivalscope.festival.repository.FestivalThemeRepository;
+import likelion.festivalscope.festival.repository.*;
+import likelion.festivalscope.plan.entity.*;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-
-import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.math.*;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
-@Component
-@RequiredArgsConstructor
+@Component @RequiredArgsConstructor @Slf4j
 public class TargetVisitorAnalyzer {
+    private static final BigDecimal THEME_WEIGHT = new BigDecimal("0.50");
+    private static final BigDecimal REGION_WEIGHT = new BigDecimal("0.25");
+    private static final BigDecimal PERIOD_WEIGHT = new BigDecimal("0.25");
+    @Value("${analysis.target-visitor.similarity-threshold:${TARGET_VISITOR_SIMILARITY_THRESHOLD:60.00}}")
+    private BigDecimal similarityThreshold;
     private final FestivalRepository festivalRepository;
     private final FestivalThemeRepository festivalThemeRepository;
     private final FestivalHistoryRepository festivalHistoryRepository;
 
     public Result analyze(FestivalPlan plan, List<FestivalPlanTheme> planThemes) {
-        if (plan.getTargetVisitorCount() == null || plan.getTargetVisitorCount() <= 0) {
-            throw new AnalysisExecutionException("紐⑺몴 諛⑸Ц媛??섍? ?덉뼱??TARGET_VISITOR 遺꾩꽍???ㅽ뻾?????덉뒿?덈떎.");
-        }
-
-        Map<Long, FestivalHistory> latestHistoryByFestival = new LinkedHashMap<>();
-        festivalHistoryRepository.findAllByVisitorCountIsNotNullOrderByYearDesc()
-                .forEach(history -> latestHistoryByFestival.putIfAbsent(history.getFestival().getFestivalId(), history));
-
-        List<Festival> festivals = festivalRepository.findAll().stream()
-                .filter(festival -> latestHistoryByFestival.containsKey(festival.getFestivalId()))
-                .toList();
-        if (festivals.isEmpty()) {
-            throw new AnalysisExecutionException("諛⑸Ц媛??섍? ?덈뒗 異뺤젣 ?대젰???놁뼱 TARGET_VISITOR 遺꾩꽍???ㅽ뻾?????놁뒿?덈떎.");
-        }
-
-        Map<Long, List<FestivalTheme>> festivalThemes = festivalThemeRepository
+        if (plan.getTargetVisitorCount() == null || plan.getTargetVisitorCount() <= 0)
+            throw new AnalysisExecutionException("TARGET_VISITOR target visitor count is required");
+        List<Festival> festivals = festivalRepository.findAll();
+        Map<Long, List<FestivalTheme>> themes = festivalThemeRepository
                 .findAllByFestival_FestivalIdIn(festivals.stream().map(Festival::getFestivalId).toList())
-                .stream()
-                .collect(Collectors.groupingBy(theme -> theme.getFestival().getFestivalId()));
-
-        List<Candidate> candidates = festivals.stream()
-                .map(festival -> createCandidate(plan, planThemes, festival,
-                        festivalThemes.getOrDefault(festival.getFestivalId(), List.of()),
-                        latestHistoryByFestival.get(festival.getFestivalId())))
-                .sorted(Comparator.comparing(Candidate::similarityScore).reversed()
-                        .thenComparing(candidate -> candidate.history().getVisitorCount(), Comparator.reverseOrder()))
-                .limit(5)
+                .stream().collect(Collectors.groupingBy(t -> t.getFestival().getFestivalId()));
+        List<FestivalHistory> histories = festivalHistoryRepository.findAll().stream()
+                .filter(h -> h.getStartDate() != null && !sameTargetHistory(plan, h)).toList();
+        List<Candidate> passedHistories = histories.stream()
+                .map(h -> candidate(plan, planThemes, h, h.getFestival() == null ? List.of() : themes.getOrDefault(h.getFestival().getFestivalId(), List.of())))
+                .filter(c -> c.similarityScore().compareTo(similarityThreshold) >= 0)
                 .toList();
+        List<Candidate> candidates = deduplicate(passedHistories);
+        List<Long> visitors = candidates.stream().map(c -> c.history().getVisitorCount()).filter(Objects::nonNull).sorted().toList();
+        BigDecimal average = visitors.isEmpty() ? null : BigDecimal.valueOf(visitors.stream().mapToLong(Long::longValue).sum())
+                .divide(BigDecimal.valueOf(visitors.size()), 2, RoundingMode.HALF_UP);
+        BigDecimal median = median(visitors);
+        BigDecimal gap = median == null || median.signum() == 0 ? null : BigDecimal.valueOf(plan.getTargetVisitorCount())
+                .subtract(median).divide(median, 4, RoundingMode.HALF_UP);
+        log.info("TARGET_VISITOR candidates: totalHistories={}, thresholdPassedHistories={}, deduplicatedFestivals={}, visitorDataCount={}, average={}, median={}, targetVisitor={}, gapRate={}",
+                histories.size(), passedHistories.size(), candidates.size(), visitors.size(), average, median, plan.getTargetVisitorCount(), gap);
+        return new Result(candidates, passedHistories.size(), average, median,
+                visitors.isEmpty() ? null : visitors.get(0), visitors.isEmpty() ? null : visitors.get(visitors.size() - 1), gap, similarityThreshold);
+    }
 
-        if (candidates.isEmpty()) {
-            throw new AnalysisExecutionException("?좎궗 異뺤젣 ?꾨낫瑜?李얠쓣 ???놁뒿?덈떎.");
+    private List<Candidate> deduplicate(List<Candidate> candidates) {
+        Comparator<Candidate> representative = Comparator
+                .comparing((Candidate c) -> c.history().getVisitorCount() != null)
+                .reversed().thenComparing(Candidate::similarityScore, Comparator.reverseOrder())
+                .thenComparing(c -> c.history().getYear(), Comparator.reverseOrder());
+        Map<String, Candidate> grouped = new HashMap<>();
+        for (Candidate candidate : candidates) {
+            String key = candidate.festival() != null && candidate.festival().getFestivalId() != null
+                    ? "F-" + candidate.festival().getFestivalId()
+                    : "H-" + candidate.history().getFestivalHistoryId();
+            grouped.merge(key, candidate, (left, right) -> representative.compare(left, right) <= 0 ? left : right);
         }
-
-        BigDecimal median = calculateMedian(candidates.stream()
-                .map(candidate -> candidate.history().getVisitorCount())
-                .sorted()
-                .toList());
-        BigDecimal target = BigDecimal.valueOf(plan.getTargetVisitorCount());
-        BigDecimal ratio = target.divide(median, 4, RoundingMode.HALF_UP);
-
-        return new Result(candidates, median, ratio, calculateScore(ratio));
+        return grouped.values().stream().sorted(Comparator.comparing(Candidate::similarityScore, Comparator.reverseOrder())
+                .thenComparing(c -> c.history().getYear(), Comparator.reverseOrder())
+                .thenComparing(c -> c.festival() == null ? Long.MAX_VALUE : c.festival().getFestivalId(), Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
     }
 
-    private Candidate createCandidate(FestivalPlan plan, List<FestivalPlanTheme> planThemes,
-                                      Festival festival, List<FestivalTheme> festivalThemes,
-                                      FestivalHistory history) {
-        BigDecimal themeSimilarity = percentage(themeMatchCount(planThemes, festivalThemes), planThemes.size());
-        BigDecimal regionSimilarity = regionSimilarity(plan, festival);
-        BigDecimal periodSimilarity = periodSimilarity(plan, history);
-        BigDecimal score = themeSimilarity.multiply(new BigDecimal("0.6"))
-                .add(regionSimilarity.multiply(new BigDecimal("0.2")))
-                .add(periodSimilarity.multiply(new BigDecimal("0.2")))
-                .setScale(2, RoundingMode.HALF_UP);
-        return new Candidate(festival, history, score, themeSimilarity, regionSimilarity, periodSimilarity);
+    private Candidate candidate(FestivalPlan plan, List<FestivalPlanTheme> planThemes, FestivalHistory history, List<FestivalTheme> festivalThemes) {
+        BigDecimal theme = themeSimilarity(planThemes, festivalThemes);
+        BigDecimal region = regionSimilarity(plan, history.getFestival());
+        BigDecimal period = periodSimilarity(plan, history);
+        BigDecimal score = theme.multiply(THEME_WEIGHT).add(region.multiply(REGION_WEIGHT)).add(period.multiply(PERIOD_WEIGHT)).setScale(2, RoundingMode.HALF_UP);
+        return new Candidate(history.getFestival(), history, score, theme, region, period);
     }
 
-    private long themeMatchCount(List<FestivalPlanTheme> planThemes, List<FestivalTheme> festivalThemes) {
-        return planThemes.stream().filter(planTheme -> festivalThemes.stream().anyMatch(festivalTheme ->
-                Objects.equals(planTheme.getThemeCode(), festivalTheme.getThemeCode())
-                        || Objects.equals(planTheme.getThemeTag(), festivalTheme.getThemeTag()))).count();
+    private BigDecimal themeSimilarity(List<FestivalPlanTheme> plan, List<FestivalTheme> candidate) {
+        Set<String> a = plan.stream().map(this::themeKey).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<String> b = candidate.stream().map(this::themeKey).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<String> union = new HashSet<>(a); union.addAll(b);
+        if (union.isEmpty()) return BigDecimal.ZERO.setScale(2);
+        Set<String> intersection = new HashSet<>(a); intersection.retainAll(b);
+        return BigDecimal.valueOf(intersection.size() * 100.0 / union.size()).setScale(2, RoundingMode.HALF_UP);
     }
-
-    private BigDecimal percentage(long matched, int total) {
-        if (total == 0) return BigDecimal.ZERO.setScale(2);
-        return BigDecimal.valueOf(matched * 100.0 / total).setScale(2, RoundingMode.HALF_UP);
+    private String themeKey(FestivalPlanTheme t) { return t.getThemeCode() != null && !t.getThemeCode().isBlank() ? "code:" + t.getThemeCode() : key(t.getThemeTag()); }
+    private String themeKey(FestivalTheme t) { return t.getThemeCode() != null && !t.getThemeCode().isBlank() ? "code:" + t.getThemeCode() : key(t.getThemeTag()); }
+    private String key(String value) { return value == null ? null : value.trim().toLowerCase(Locale.ROOT); }
+    private BigDecimal regionSimilarity(FestivalPlan p, Festival f) {
+        if (f == null || !same(p.getSido(), f.getSido())) return BigDecimal.ZERO.setScale(2);
+        return same(p.getSigungu(), f.getSigungu()) ? BigDecimal.valueOf(100) : BigDecimal.valueOf(70);
     }
-
-    private BigDecimal regionSimilarity(FestivalPlan plan, Festival festival) {
-        if (!Objects.equals(plan.getSido(), festival.getSido())) return BigDecimal.ZERO;
-        if (plan.getSigungu() != null && Objects.equals(plan.getSigungu(), festival.getSigungu())) {
-            return BigDecimal.valueOf(100).setScale(2);
-        }
-        return BigDecimal.valueOf(50).setScale(2);
+    private BigDecimal periodSimilarity(FestivalPlan p, FestivalHistory h) {
+        if (p.getStartDate() == null) return BigDecimal.ZERO.setScale(2);
+        int d = Math.abs(p.getStartDate().getMonthValue() - h.getStartDate().getMonthValue());
+        d = Math.min(d, 12 - d);
+        return BigDecimal.valueOf(d == 0 ? 100 : d == 1 ? 70 : d == 2 ? 40 : 0).setScale(2);
     }
-
-    private BigDecimal periodSimilarity(FestivalPlan plan, FestivalHistory history) {
-        if (plan.getStartDate() == null || history.getStartDate() == null) return BigDecimal.ZERO.setScale(2);
-        return BigDecimal.valueOf(plan.getStartDate().getMonthValue() == history.getStartDate().getMonthValue() ? 100 : 0)
-                .setScale(2);
+    private boolean sameTargetHistory(FestivalPlan p, FestivalHistory h) {
+        return h.getFestival() != null && p.getStartDate() != null && h.getYear() == p.getStartDate().getYear()
+                && same(p.getFestivalName(), h.getFestival().getFestivalName()) && same(p.getSido(), h.getFestival().getSido()) && same(p.getSigungu(), h.getFestival().getSigungu());
     }
-
-    private BigDecimal calculateMedian(List<Long> sortedValues) {
-        int middle = sortedValues.size() / 2;
-        if (sortedValues.size() % 2 == 1) return BigDecimal.valueOf(sortedValues.get(middle));
-        return BigDecimal.valueOf(sortedValues.get(middle - 1))
-                .add(BigDecimal.valueOf(sortedValues.get(middle)))
-                .divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal calculateScore(BigDecimal ratio) {
-        if (ratio.compareTo(BigDecimal.ONE) <= 0) return BigDecimal.valueOf(100);
-        if (ratio.compareTo(new BigDecimal("1.2")) <= 0) return BigDecimal.valueOf(85);
-        if (ratio.compareTo(new BigDecimal("1.5")) <= 0) return BigDecimal.valueOf(70);
-        if (ratio.compareTo(new BigDecimal("2.0")) <= 0) return BigDecimal.valueOf(50);
-        return BigDecimal.valueOf(30);
-    }
-
-    public record Result(List<Candidate> candidates, BigDecimal median, BigDecimal ratio, BigDecimal score) {}
-
-    public record Candidate(Festival festival, FestivalHistory history, BigDecimal similarityScore,
-                            BigDecimal themeSimilarity, BigDecimal regionSimilarity,
-                            BigDecimal periodSimilarity) {}
+    private boolean same(String a, String b) { return normalize(a).equals(normalize(b)); }
+    private String normalize(String value) { return value == null ? "" : value.replace(" ", "").trim(); }
+    private BigDecimal median(List<Long> values) { if (values.isEmpty()) return null; int m = values.size() / 2; return values.size() % 2 == 1 ? BigDecimal.valueOf(values.get(m)) : BigDecimal.valueOf(values.get(m - 1)).add(BigDecimal.valueOf(values.get(m))).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP); }
+    public record Result(List<Candidate> candidates, int thresholdPassedHistoryCount, BigDecimal visitorAverage, BigDecimal visitorMedian, Long visitorMin, Long visitorMax, BigDecimal gapRate, BigDecimal similarityThreshold) {}
+    public record Candidate(Festival festival, FestivalHistory history, BigDecimal similarityScore, BigDecimal themeSimilarity, BigDecimal regionSimilarity, BigDecimal periodSimilarity) {}
 }

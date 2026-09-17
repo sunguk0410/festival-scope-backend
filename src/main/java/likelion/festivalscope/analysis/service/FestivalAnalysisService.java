@@ -24,6 +24,7 @@ import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
 import likelion.festivalscope.global.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,12 +37,14 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FestivalAnalysisService {
     private final FestivalPlanRepository festivalPlanRepository;
     private final FestivalPlanThemeRepository festivalPlanThemeRepository;
     private final FestivalAnalysisRepository festivalAnalysisRepository;
     private final FestivalAnalysisItemRepository festivalAnalysisItemRepository;
     private final FestivalAnalysisSimilarRepository festivalAnalysisSimilarRepository;
+    private final FestivalAnalysisTargetVisitorRepository festivalAnalysisTargetVisitorRepository;
     private final TargetVisitorAnalyzer targetVisitorAnalyzer;
     private final TrendFitAnalyzer trendFitAnalyzer;
     private final FestivalAnalysisTrendKeywordRepository festivalAnalysisTrendKeywordRepository;
@@ -89,8 +92,9 @@ public class FestivalAnalysisService {
                         .festivalAnalysisItem(targetVisitorItem)
                         .festival(candidate.festival())
                         .festivalHistory(candidate.history())
-                        .festivalName(candidate.festival().getFestivalName())
+                        .festivalName(candidate.festival() == null ? candidate.history().getFestivalNameRaw() : candidate.festival().getFestivalName())
                         .year(candidate.history().getYear())
+                        .budget(candidate.history().getBudget())
                         .visitorCount(candidate.history().getVisitorCount())
                         .budget(candidate.history().getBudget())
                         .similarityScore(candidate.similarityScore())
@@ -100,6 +104,7 @@ public class FestivalAnalysisService {
                         .rankOrder(index + 1)
                         .build());
             }
+            saveTargetVisitorSnapshot(targetVisitorItem, plan, result);
 
             FestivalAnalysisItem trendFitItem = items.stream()
                     .filter(item -> item.getItemType() == AnalysisItemType.TREND_FIT)
@@ -120,8 +125,7 @@ public class FestivalAnalysisService {
                     .orElseThrow();
             saveWeatherRiskSnapshot(weatherRiskItem, weatherRiskAnalyzer.analyze(plan));
 
-            replaceItemScore(targetVisitorItem, result.score());
-            replaceAnalysisStatus(analysis, result.score(), AnalysisStatus.COMPLETED, LocalDateTime.now());
+            replaceAnalysisStatus(analysis, null, AnalysisStatus.COMPLETED, LocalDateTime.now());
             return analysis.getFestivalAnalysisId();
         } catch (Exception exception) {
             replaceAnalysisStatus(analysis, null, AnalysisStatus.FAILED, LocalDateTime.now());
@@ -160,21 +164,20 @@ public class FestivalAnalysisService {
         FestivalAnalysisItem item = festivalAnalysisItemRepository
                 .findByFestivalAnalysis_FestivalAnalysisIdAndItemType(analysisId, AnalysisItemType.TARGET_VISITOR)
                 .orElseThrow(() -> new ResourceNotFoundException("TARGET_VISITOR ??ぉ??李얠쓣 ???놁뒿?덈떎: " + analysisId));
-        List<FestivalAnalysisSimilar> similarFestivals = festivalAnalysisSimilarRepository
-                .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByRankOrderAsc(item.getFestivalAnalysisItemId());
-        BigDecimal median = calculateMedian(similarFestivals.stream()
-                .map(FestivalAnalysisSimilar::getVisitorCount)
-                .sorted()
-                .toList());
-        BigDecimal target = BigDecimal.valueOf(analysis.getFestivalPlan().getTargetVisitorCount());
-        BigDecimal ratio = target.divide(median, 4, RoundingMode.HALF_UP);
-        List<TargetVisitorResponse.SimilarFestivalResponse> similarResponses = similarFestivals.stream()
-                .map(similar -> new TargetVisitorResponse.SimilarFestivalResponse(
-                        similar.getFestivalName(), similar.getYear(), similar.getVisitorCount(),
-                        similar.getSimilarityScore(), similar.getRankOrder()))
-                .toList();
-        return new TargetVisitorResponse(item.getItemType(), item.getScore(),
-                analysis.getFestivalPlan().getTargetVisitorCount(), median, ratio, similarResponses);
+        FestivalAnalysisTargetVisitor snapshot = festivalAnalysisTargetVisitorRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
+                .orElseThrow(() -> new AnalysisExecutionException("TARGET_VISITOR snapshot not found: " + analysisId));
+        List<TargetVisitorResponse.SimilarFestival> similarResponses = festivalAnalysisSimilarRepository
+                .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByRankOrderAsc(item.getFestivalAnalysisItemId()).stream()
+                .filter(similar -> similar.getRankOrder() <= 5)
+                .map(similar -> new TargetVisitorResponse.SimilarFestival(similar.getRankOrder(),
+                        similar.getFestival() == null ? null : similar.getFestival().getFestivalId(),
+                        similar.getFestivalHistory() == null ? null : similar.getFestivalHistory().getFestivalHistoryId(),
+                        similar.getFestivalName(), similar.getYear(), similar.getBudget(), similar.getVisitorCount(),
+                        similar.getThemeSimilarity(), similar.getRegionSimilarity(), similar.getPeriodSimilarity(), similar.getSimilarityScore())).toList();
+        return new TargetVisitorResponse(item.getItemType(), item.getScore(), new TargetVisitorResponse.TargetVisitor(
+                snapshot.getTargetVisitorCount(), snapshot.getSimilarFestivalCount(), snapshot.getVisitorDataCount(),
+                snapshot.getVisitorAverage(), snapshot.getVisitorMedian(), snapshot.getVisitorMin(), snapshot.getVisitorMax(),
+                snapshot.getGapRate(), snapshot.getSimilarityThreshold(), similarResponses));
     }
 
     @Transactional(readOnly = true)
@@ -255,6 +258,22 @@ public class FestivalAnalysisService {
         } catch (Exception exception) {
             throw new AnalysisExecutionException("WEATHER_RISK snapshot save failed", exception);
         }
+    }
+
+    private void saveTargetVisitorSnapshot(FestivalAnalysisItem item, FestivalPlan plan, TargetVisitorAnalyzer.Result result) {
+        int visitorDataCount = (int) result.candidates().stream().filter(candidate -> candidate.history().getVisitorCount() != null).count();
+        festivalAnalysisTargetVisitorRepository.save(FestivalAnalysisTargetVisitor.builder()
+                .festivalAnalysisItem(item).targetVisitorCount(plan.getTargetVisitorCount())
+                .similarFestivalCount(result.candidates().size()).visitorDataCount(visitorDataCount)
+                .visitorAverage(result.visitorAverage()).visitorMedian(result.visitorMedian())
+                .visitorMin(result.visitorMin()).visitorMax(result.visitorMax()).gapRate(result.gapRate())
+                .similarityThreshold(result.similarityThreshold()).build());
+        log.info("TARGET_VISITOR snapshot: candidates={}, visitorDataCount={}, average={}, median={}, targetVisitor={}, gapRate={}, top5={}",
+                result.candidates().size(), visitorDataCount, result.visitorAverage(), result.visitorMedian(),
+                plan.getTargetVisitorCount(), result.gapRate(), result.candidates().stream().limit(5)
+                        .map(c -> (c.festival() == null ? c.history().getFestivalNameRaw() : c.festival().getFestivalName())
+                                + "(" + c.history().getYear() + ") budget=" + c.history().getBudget()
+                                + ", visitors=" + c.history().getVisitorCount() + ", score=" + c.similarityScore()).toList());
     }
 
     private void saveDemandSnapshots(FestivalAnalysisItem item, FestivalPlan plan, DemandFitAnalyzer.Result result) {
