@@ -51,7 +51,6 @@ public class FestivalPlanService {
                 .startDate(request.startDate())
                 .endDate(request.endDate())
                 .durationDays(calculateDurationDays(request))
-                .budget(request.budget())
                 .targetVisitorCount(request.targetVisitorCount())
                 .venueType(request.venueType())
                 .capacity(request.capacity())

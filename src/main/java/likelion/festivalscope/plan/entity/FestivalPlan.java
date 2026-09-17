@@ -59,9 +59,6 @@ public class FestivalPlan extends BaseTimeEntity {
     @Column(name = "duration_days")
     private Integer durationDays;
 
-    @Column(precision = 15, scale = 2)
-    private BigDecimal budget;
-
     @Column(name = "target_visitor_count")
     private Long targetVisitorCount;
 
