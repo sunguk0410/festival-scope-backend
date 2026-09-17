@@ -50,7 +50,7 @@ public class RegionalVisitorClient {
         return normalized;
     }
 
-    public List<VisitorRecord> fetch(String region, String adminCodePrefix, LocalDate from, LocalDate to) {
+    public List<VisitorRecord> fetchAll(LocalDate from, LocalDate to) {
         if (key.isBlank()) {
             throw new AnalysisExecutionException("관광수요 방문자 API 인증키가 설정되지 않았습니다.");
         }
@@ -69,7 +69,7 @@ public class RegionalVisitorClient {
                     + "&_type=json";
             // serviceKey는 공공데이터포털에서 받은 Encoding 키를 그대로 전달한다.
             URI requestUri = URI.create(requestUrl);
-            String requestSummary = requestSummary(region, from, to, pageNo);
+            String requestSummary = requestSummary("NATIONWIDE", from, to, pageNo);
             long startedAt = System.nanoTime();
             log.info("Regional visitor API request started: {}, uri={}",
                     requestSummary, redactServiceKey(requestUri.toString()));
@@ -129,7 +129,7 @@ public class RegionalVisitorClient {
             List<JsonNode> rawItems = body == null ? List.of() : items(body.path("items").path("item"));
             int rawItemCount = rawItems.size();
             List<Raw> parsedAll = rawItems.stream().map(this::raw).filter(Objects::nonNull).toList();
-            List<Raw> parsed = parsedAll.stream().filter(row -> row.code.startsWith(adminCodePrefix)).toList();
+            List<Raw> parsed = parsedAll;
             int parsedItemCount = parsed.size();
             if (rawItemCount > 0 && parsedAll.isEmpty()) {
                 log.error("Regional visitor API item parsing produced no rows: {}, firstItemFields={}, firstItem={}",

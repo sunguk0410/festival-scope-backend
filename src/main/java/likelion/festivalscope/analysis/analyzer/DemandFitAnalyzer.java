@@ -7,6 +7,9 @@ import likelion.festivalscope.common.util.GeoDistance;
 import likelion.festivalscope.external.bus.BusRouteClient;
 import likelion.festivalscope.external.bus.BusStopClient;
 import likelion.festivalscope.external.tourism.RegionalVisitorClient;
+import likelion.festivalscope.analysis.entity.RegionalVisitorStat;
+import likelion.festivalscope.analysis.repository.RegionalVisitorStatRepository;
+import likelion.festivalscope.analysis.service.RegionalVisitorCollector;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
 import likelion.festivalscope.global.exception.ErrorCode;
@@ -50,6 +53,8 @@ public class DemandFitAnalyzer {
     private final BusStopClient busStopClient;
     private final BusRouteClient busRouteClient;
     private final StationAccessibilityService stationAccessibilityService;
+    private final RegionalVisitorCollector regionalVisitorCollector;
+    private final RegionalVisitorStatRepository regionalVisitorStatRepository;
 
     public Result analyze(FestivalPlan plan) {
         if (plan.getLatitude() == null || plan.getLongitude() == null) {
@@ -59,17 +64,22 @@ public class DemandFitAnalyzer {
             throw new AnalysisExecutionException("시군구가 없어 지역 관광수요를 분석할 수 없습니다.");
         }
         int endYear = LocalDate.now().getYear() - 1;
-        LocalDate from = LocalDate.of(endYear, 1, 1);
+        int startYear = endYear - 4;
+        LocalDate from = LocalDate.of(startYear, 1, 1);
         LocalDate to = LocalDate.of(endYear, 12, 31);
         String area = AREA_CODES.get(plan.getSido());
         if (area == null) {
             throw new AnalysisExecutionException("시도 관광수요 지역 코드를 찾을 수 없습니다: " + plan.getSido());
         }
-        List<RegionalVisitorClient.VisitorRecord> records = visitorClient.fetch(
-                area, ADMIN_CODE_PREFIXES.get(area), from, to);
+        regionalVisitorCollector.ensureRecentYearsCollected(endYear, 5);
+        List<RegionalVisitorStat> stats = regionalVisitorStatRepository.findAllByBaseYmdBetween(from, to);
+        String targetSignguCode = stats.stream()
+                .filter(row -> plan.getSido().equals(row.getSidoName()) && plan.getSigungu().equals(row.getSignguName()))
+                .map(RegionalVisitorStat::getSignguCode).findFirst().orElse(null);
+        List<RegionalVisitorClient.VisitorRecord> records = stats.stream().map(this::toVisitorRecord).toList();
         // API가 0건을 반환한 경우에도 분석 자체는 성공시키되, 수요 지표는 null로 반환한다.
         AccessibilityData accessibility = accessibility(plan);
-        return build(plan, records, accessibility, endYear);
+        return build(plan, records, accessibility, endYear, targetSignguCode);
     }
 
     public Result fromSnapshots(FestivalPlan plan, List<FestivalAnalysisDemand> rows,
@@ -95,8 +105,13 @@ public class DemandFitAnalyzer {
         return buildFromAggregates(plan, regionYears, daily, accessibility, LocalDate.now().getYear() - 1);
     }
 
+    private RegionalVisitorClient.VisitorRecord toVisitorRecord(RegionalVisitorStat stat) {
+        return new RegionalVisitorClient.VisitorRecord(stat.getBaseYmd(), stat.getSignguCode(),
+                stat.getSignguName(), stat.getSidoName(), stat.getVisitorCount());
+    }
+
     private Result build(FestivalPlan plan, List<RegionalVisitorClient.VisitorRecord> records,
-                         AccessibilityData accessibility, int endYear) {
+                         AccessibilityData accessibility, int endYear, String targetSignguCode) {
         Map<String, List<RegionalVisitorClient.VisitorRecord>> byRegion = records.stream()
                 .collect(Collectors.groupingBy(RegionalVisitorClient.VisitorRecord::regionCode));
         List<RegionalYear> years = byRegion.values().stream()
@@ -111,7 +126,7 @@ public class DemandFitAnalyzer {
                         }))
                 .toList();
         List<RegionalVisitorClient.VisitorRecord> daily = records.stream()
-                .filter(r -> r.regionName().equals(plan.getSigungu()))
+                .filter(r -> targetSignguCode != null && r.regionCode().equals(targetSignguCode))
                 .toList();
         return buildFromAggregates(plan, years, daily, accessibility, endYear);
     }
@@ -148,15 +163,15 @@ public class DemandFitAnalyzer {
                 target, targetValue, comparisonAverage, comparisonMedian, rank, totalRegions, percentile, comparisonRegions);
 
         int month = plan.getStartDate() == null ? 1 : plan.getStartDate().getMonthValue();
-        Map<Integer, Long> monthly = new LinkedHashMap<>();
-        for (int m = 1; m <= 12; m++) monthly.put(m, monthlyAverage(daily, m, endYear));
+        Map<Integer, BigDecimal> monthly = new LinkedHashMap<>();
+        for (int m = 1; m <= 12; m++) monthly.put(m, monthlyAverage(daily, m));
         List<DemandFitResponse.MonthlyDemand> months = monthly.entrySet().stream()
                 .map(entry -> new DemandFitResponse.MonthlyDemand(entry.getKey(), entry.getValue())).toList();
-        List<Map.Entry<Integer, Long>> availableMonths = monthly.entrySet().stream()
+        List<Map.Entry<Integer, BigDecimal>> availableMonths = monthly.entrySet().stream()
                 .filter(entry -> entry.getValue() != null)
-                .sorted(Map.Entry.<Integer, Long>comparingByValue().reversed()).toList();
-        Long eventMonthVisitorCount = monthly.get(month);
-        Integer eventMonthRank = eventMonthVisitorCount == null ? null : indexOfMonth(availableMonths, month) + 1;
+                .sorted(Map.Entry.<Integer, BigDecimal>comparingByValue().reversed()).toList();
+        BigDecimal eventMonthAverage = monthly.get(month);
+        Integer eventMonthRank = eventMonthAverage == null ? null : indexOfMonth(availableMonths, month) + 1;
         BigDecimal eventMonthPercentile = eventMonthRank == null ? null
                 : percentile(eventMonthRank, availableMonths.size());
 
@@ -166,19 +181,21 @@ public class DemandFitAnalyzer {
                 .min(Comparator.comparing(DemandFitResponse.WeeklyDemand::rank))
                 .map(DemandFitResponse.WeeklyDemand::week).orElse(null);
         DemandFitResponse.SeasonalDemand seasonal = new DemandFitResponse.SeasonalDemand(
-                month, months, eventMonthVisitorCount, eventMonthRank, eventMonthPercentile, weeks, recommendedWeek);
+                month, eventMonthAverage, months, eventMonthRank, eventMonthPercentile, weeks, recommendedWeek);
         return new Result(regional, seasonal,
                 new DemandFitResponse.Accessibility(accessibility.bus(), accessibility.rail()), years, daily);
     }
 
-    private Long monthlyAverage(List<RegionalVisitorClient.VisitorRecord> daily, int month, int endYear) {
-        boolean exists = daily.stream().anyMatch(r -> r.date().getMonthValue() == month
-                && r.date().getYear() == endYear);
-        if (!exists) return null;
-        long sum = daily.stream().filter(r -> r.date().getMonthValue() == month
-                        && r.date().getYear() == endYear)
-                .mapToLong(RegionalVisitorClient.VisitorRecord::visitorCount).sum();
-        return sum;
+    private BigDecimal monthlyAverage(List<RegionalVisitorClient.VisitorRecord> daily, int month) {
+        List<BigDecimal> yearlyAverages = daily.stream()
+                .filter(r -> r.date().getMonthValue() == month)
+                .collect(Collectors.groupingBy(r -> r.date().getYear(), LinkedHashMap::new, Collectors.toList()))
+                .values().stream()
+                .map(rows -> BigDecimal.valueOf(rows.stream().mapToLong(RegionalVisitorClient.VisitorRecord::visitorCount).sum())
+                        .divide(BigDecimal.valueOf(rows.size()), 2, RoundingMode.HALF_UP))
+                .toList();
+        return yearlyAverages.isEmpty() ? null : yearlyAverages.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(yearlyAverages.size()), 2, RoundingMode.HALF_UP);
     }
 
     private List<DemandFitResponse.WeeklyDemand> weekly(List<RegionalVisitorClient.VisitorRecord> daily,
@@ -196,12 +213,13 @@ public class DemandFitAnalyzer {
             BigDecimal average = null;
             if (exists) {
                 BigDecimal sum = BigDecimal.ZERO;
-                long yearly = daily.stream().filter(r -> r.date().getYear() == endYear
+                List<RegionalVisitorClient.VisitorRecord> weekRows = daily.stream().filter(r -> r.date().getYear() == endYear
                                     && r.date().getMonthValue() == month
                                     && r.date().getDayOfMonth() >= start && r.date().getDayOfMonth() <= end)
-                            .mapToLong(RegionalVisitorClient.VisitorRecord::visitorCount).sum();
+                            .toList();
+                long yearly = weekRows.stream().mapToLong(RegionalVisitorClient.VisitorRecord::visitorCount).sum();
                 average = BigDecimal.valueOf(yearly)
-                        .divide(BigDecimal.valueOf(Math.max(days, 1)), 2, RoundingMode.HALF_UP);
+                        .divide(BigDecimal.valueOf(Math.max(weekRows.size(), 1)), 2, RoundingMode.HALF_UP);
                 values.put(week, average);
             }
             raw.add(new DemandFitResponse.WeeklyDemand(week, start, end, days, average, null, referenceOnly));
@@ -242,7 +260,7 @@ public class DemandFitAnalyzer {
         return -1;
     }
 
-    private int indexOfMonth(List<Map.Entry<Integer, Long>> values, int month) {
+    private int indexOfMonth(List<Map.Entry<Integer, BigDecimal>> values, int month) {
         for (int i = 0; i < values.size(); i++) if (values.get(i).getKey() == month) return i;
         return -1;
     }

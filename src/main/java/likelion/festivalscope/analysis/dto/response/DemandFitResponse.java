@@ -11,11 +11,11 @@ public record DemandFitResponse(AnalysisItemType itemType, BigDecimal score,
                                  BigDecimal comparisonMedian, Integer rank, Integer totalRegions,
                                  BigDecimal percentile, List<ComparisonRegion> comparisonRegions) {}
     public record ComparisonRegion(String region, Long visitorCount, Integer rank) {}
-    public record SeasonalDemand(Integer eventMonth, List<MonthlyDemand> monthlyAverage,
-                                 Long eventMonthVisitorCount, Integer eventMonthRank,
+    public record SeasonalDemand(Integer eventMonth, BigDecimal eventMonthAverage,
+                                 List<MonthlyDemand> monthlyAverage, Integer eventMonthRank,
                                  BigDecimal eventMonthPercentile, List<WeeklyDemand> weeklyDemand,
                                  Integer recommendedWeek) {}
-    public record MonthlyDemand(Integer month, Long visitorCount) {}
+    public record MonthlyDemand(Integer month, BigDecimal visitorAverage) {}
     public record WeeklyDemand(Integer week, Integer startDay, Integer endDay, Integer days,
                                BigDecimal averageDailyVisitors, Integer rank, Boolean referenceOnly) {}
     public record Accessibility(Bus bus, Rail rail) {}
