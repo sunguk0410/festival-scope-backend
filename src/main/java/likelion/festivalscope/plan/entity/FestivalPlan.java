@@ -7,7 +7,6 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalTime;
 
 @Getter
 @Builder
@@ -30,6 +29,8 @@ public class FestivalPlan extends BaseTimeEntity {
 
     @Column(name = "festival_name", nullable = false, length = 200)
     private String festivalName;
+    @Enumerated(EnumType.STRING) @Column(name = "festival_status", length = 20) private FestivalStatus festivalStatus;
+    @Column(name = "first_held_year") private Integer firstHeldYear;
 
     @Column(nullable = false, length = 50)
     private String sido;
@@ -68,16 +69,8 @@ public class FestivalPlan extends BaseTimeEntity {
     @Column(name = "venue_type", length = 20)
     private VenueType venueType;
 
-    @Column(name = "operation_start_time")
-    private LocalTime operationStartTime;
-
-    @Column(name = "operation_end_time")
-    private LocalTime operationEndTime;
-
+    @Column(name = "capacity")
     private Integer capacity;
-
-    @Column(name = "rain_plan_available")
-    private Boolean rainPlanAvailable;
 
     @Column(name = "original_file_name", length = 255)
     private String originalFileName;

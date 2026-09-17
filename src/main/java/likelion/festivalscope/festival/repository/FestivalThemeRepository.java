@@ -11,4 +11,5 @@ public interface FestivalThemeRepository extends JpaRepository<FestivalTheme, Lo
     List<FestivalTheme> findAllByFestival_FestivalId(Long festivalId);
     List<FestivalTheme> findAllByFestival_FestivalIdIn(Collection<Long> festivalIds);
     Optional<FestivalTheme> findByFestival_FestivalIdAndThemeCode(Long festivalId, String themeCode);
+    Optional<FestivalTheme> findFirstByThemeCode(String themeCode);
 }

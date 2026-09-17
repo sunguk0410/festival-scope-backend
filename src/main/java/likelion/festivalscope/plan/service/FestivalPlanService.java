@@ -11,6 +11,7 @@ import likelion.festivalscope.plan.repository.FestivalPlanRepository;
 import likelion.festivalscope.plan.repository.FestivalPlanThemeRepository;
 import likelion.festivalscope.user.entity.User;
 import likelion.festivalscope.user.repository.UserRepository;
+import likelion.festivalscope.festival.repository.FestivalThemeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ public class FestivalPlanService {
     private final FestivalPlanRepository festivalPlanRepository;
     private final FestivalPlanThemeRepository festivalPlanThemeRepository;
     private final FestivalPlanProgramRepository festivalPlanProgramRepository;
+    private final FestivalThemeRepository festivalThemeRepository;
 
     @Transactional
     public FestivalPlanCreateResponse create(FestivalPlanCreateRequest request) {
@@ -52,29 +54,27 @@ public class FestivalPlanService {
                 .budget(request.budget())
                 .targetVisitorCount(request.targetVisitorCount())
                 .venueType(request.venueType())
-                .operationStartTime(request.operationStartTime())
-                .operationEndTime(request.operationEndTime())
                 .capacity(request.capacity())
-                .rainPlanAvailable(request.rainPlanAvailable())
+                .festivalStatus(request.festivalStatus())
+                .firstHeldYear(request.firstHeldYear())
                 .build());
 
-        List<FestivalPlanCreateRequest.ThemeRequest> themes = request.themes() == null ? List.of() : request.themes();
-        themes.stream()
+        List<String> themeCodes = request.themeCodes() == null ? List.of() : request.themeCodes();
+        themeCodes.stream()
                 .map(theme -> FestivalPlanTheme.builder()
                         .festivalPlan(plan)
-                        .themeCode(theme.themeCode())
-                        .themeTag(theme.themeTag())
+                        .themeCode(theme)
+                        .themeTag(festivalThemeRepository.findFirstByThemeCode(theme)
+                                .map(likelion.festivalscope.festival.entity.FestivalTheme::getThemeTag)
+                                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REQUEST)))
                         .build())
                 .forEach(festivalPlanThemeRepository::save);
 
-        List<FestivalPlanCreateRequest.ProgramRequest> programs = request.programs() == null ? List.of() : request.programs();
-        programs.stream()
+        List<String> programNames = request.programNames() == null ? List.of() : request.programNames();
+        programNames.stream()
                 .map(program -> FestivalPlanProgram.builder()
                         .festivalPlan(plan)
-                        .programName(program.programName())
-                        .programType(program.programType())
-                        .spaceType(program.spaceType())
-                        .description(program.description())
+                        .programName(program)
                         .build())
                 .forEach(festivalPlanProgramRepository::save);
 
