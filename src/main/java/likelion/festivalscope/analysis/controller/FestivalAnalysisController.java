@@ -12,6 +12,7 @@ import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
 import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
 import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
+import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
 import likelion.festivalscope.analysis.service.FestivalAnalysisService;
 import likelion.festivalscope.global.response.ErrorResponse;
 import lombok.RequiredArgsConstructor;
@@ -81,6 +82,12 @@ public class FestivalAnalysisController {
     @GetMapping("/api/analyses/{analysisId}/items/WEATHER_RISK")
     public WeatherRiskResponse getWeatherRisk(@PathVariable Long analysisId) {
         return festivalAnalysisService.getWeatherRisk(analysisId);
+    }
+
+    @Operation(summary = "CONFLICT_RISK 상세 조회")
+    @GetMapping("/api/analyses/{analysisId}/items/CONFLICT_RISK")
+    public ConflictRiskResponse getConflictRisk(@PathVariable Long analysisId) {
+        return festivalAnalysisService.getConflictRisk(analysisId);
     }
 
     @Operation(summary = "WEATHER_RISK API 테스트", description = "분석 결과나 snapshot을 저장하지 않고 축제 계획의 좌표와 기간으로 날씨 분석만 실행합니다.")

@@ -38,13 +38,21 @@ public class WeatherRiskAnalyzer {
         if (plan.getStartDate() == null || plan.getEndDate() == null || plan.getLatitude() == null || plan.getLongitude() == null)
             throw new IllegalArgumentException("Weather risk analysis requires festival dates and venue coordinates");
         WeatherStationService.Selection selected = stationService.findNearest(plan.getLatitude(), plan.getLongitude());
+        // 개최 예정 연도보다 과거인 연도만 우선 후보로 삼되, 현재 연도도
+        // 동일 기간의 종료일까지 자료가 공개됐다면 분석에 포함할 수 있다.
         int latestYear = Math.min(plan.getStartDate().getYear() - 1, LocalDate.now().getYear());
+        LocalDate latestAvailableDate = LocalDate.now().minusDays(1);
         log.info("WEATHER_RISK analysis started: stationId={}, stationName={}, distanceKm={}, latestAllowedYear={}, requestedYears={}",
                 selected.station().getStationId(), selected.station().getStationName(), selected.distanceKm(), latestYear, requestedYears);
         List<WeatherStatisticsCalculator.YearWeather> years = new java.util.ArrayList<>();
         for (int year = latestYear; year >= 1 && years.size() < requestedYears; year--) {
             LocalDate from = sameMonthDay(year, plan.getStartDate());
             LocalDate to = sameMonthDay(year, plan.getEndDate());
+            if (to.isAfter(latestAvailableDate)) {
+                log.info("WEATHER_RISK year skipped because requested period is not fully available: year={}, from={}, to={}, latestAvailableDate={}",
+                        year, from, to, latestAvailableDate);
+                continue;
+            }
             log.info("WEATHER_RISK year request: year={}, from={}, to={}", year, from, to);
             List<AsosDailyWeatherDto> days = client.getDailyWeather(selected.station().getStationId(), from, to);
             if (!days.isEmpty()) years.add(new WeatherStatisticsCalculator.YearWeather(year, days));

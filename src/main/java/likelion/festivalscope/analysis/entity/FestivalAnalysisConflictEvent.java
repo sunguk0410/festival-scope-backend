@@ -26,4 +26,8 @@ public class FestivalAnalysisConflictEvent extends CreatedAtEntity {
     @Column(name = "overlap_days") private Integer overlapDays;
     @Column(name = "same_theme") private Boolean sameTheme;
     @Enumerated(EnumType.STRING) @Column(name = "event_basis", nullable = false, length = 20) private EventBasis eventBasis;
+    // Nullable for compatibility with evidence rows created before CONFLICT_RISK was introduced.
+    @Enumerated(EnumType.STRING) @Column(name = "region_relation", length = 20) private RegionRelation regionRelation;
+    @Enumerated(EnumType.STRING) @Column(name = "conflict_type", length = 30) private ConflictType conflictType;
+    @Column(name = "visitor_count") private Long visitorCount;
 }

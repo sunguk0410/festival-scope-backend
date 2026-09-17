@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface FestivalHistoryRepository extends JpaRepository<FestivalHistory, Long> {
+    List<FestivalHistory> findAllByFestival_SigunguAndYearBetween(String sigungu, Integer from, Integer to);
+    List<FestivalHistory> findAllByYearBetween(Integer from, Integer to);
     List<FestivalHistory> findAllByFestival_FestivalIdOrderByYearDesc(Long festivalId);
     Optional<FestivalHistory> findTopByFestival_FestivalIdAndVisitorCountIsNotNullOrderByYearDesc(Long festivalId);
     Optional<FestivalHistory> findByFestival_FestivalIdAndYear(Long festivalId, Integer year);

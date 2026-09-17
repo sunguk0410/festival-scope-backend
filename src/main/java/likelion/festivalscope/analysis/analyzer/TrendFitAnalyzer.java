@@ -42,8 +42,23 @@ public class TrendFitAnalyzer {
         YearMonth requestEnd = eventPeriod.map(Period::end).map(month -> month.isAfter(historicalEnd) ? month : historicalEnd)
                 .orElse(historicalEnd);
 
+        // DataLab은 미래 날짜를 조회할 수 없으므로 행사 예정일에서 계산한 기간을 현재 월까지만 제한한다.
+        YearMonth latestAllowedMonth = YearMonth.from(LocalDate.now());
+        if (requestEnd.isAfter(latestAllowedMonth)) {
+            requestEnd = latestAllowedMonth;
+        }
+        // 행사 예정일이 너무 미래라 요청 시작월도 현재보다 뒤에 남는 경우,
+        // 최근 3개년 전체 구간으로 되돌려 유효한 날짜 범위를 만든다.
+        if (requestStart.isAfter(requestEnd)) {
+            requestStart = historicalStart;
+        }
+
+        LocalDate requestEndDate = requestEnd.atEndOfMonth();
+        if (requestEndDate.isAfter(LocalDate.now())) {
+            requestEndDate = LocalDate.now();
+        }
         Map<String, List<NaverDataLabClient.DataPoint>> dataByKeyword = naverDataLabClient.search(
-                keywords, requestStart.atDay(1), requestEnd.atEndOfMonth());
+                keywords, requestStart.atDay(1), requestEndDate);
 
         List<TrendAnalysisResult.MonthlyData> monthlyData = new ArrayList<>();
         Map<String, List<TrendAnalysisResult.YearlyMetric>> keywordYearly = new LinkedHashMap<>();

@@ -8,6 +8,8 @@ import likelion.festivalscope.analysis.analyzer.DemandFitAnalyzer;
 import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
 import likelion.festivalscope.analysis.weather.WeatherRiskAnalyzer;
 import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
+import likelion.festivalscope.analysis.conflict.ScheduleConflictAnalyzer;
+import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
 import likelion.festivalscope.analysis.dto.response.FestivalAnalysisResponse;
 import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
@@ -48,6 +50,9 @@ public class FestivalAnalysisService {
     private final DemandFitAnalyzer demandFitAnalyzer;
     private final WeatherRiskAnalyzer weatherRiskAnalyzer;
     private final FestivalAnalysisWeatherRiskSnapshotRepository weatherRiskSnapshotRepository;
+    private final FestivalAnalysisConflictRepository festivalAnalysisConflictRepository;
+    private final FestivalAnalysisConflictEventRepository festivalAnalysisConflictEventRepository;
+    private final ScheduleConflictAnalyzer scheduleConflictAnalyzer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(noRollbackFor = AnalysisExecutionException.class)
@@ -105,6 +110,9 @@ public class FestivalAnalysisService {
             FestivalAnalysisItem demandFitItem = items.stream().filter(item -> item.getItemType() == AnalysisItemType.DEMAND_FIT).findFirst().orElseThrow();
             DemandFitAnalyzer.Result demandResult = demandFitAnalyzer.analyze(plan);
             saveDemandSnapshots(demandFitItem, plan, demandResult);
+
+            FestivalAnalysisItem conflictItem = items.stream().filter(item -> item.getItemType() == AnalysisItemType.CONFLICT_RISK).findFirst().orElseThrow();
+            saveConflictSnapshot(conflictItem, plan, scheduleConflictAnalyzer.analyze(plan));
 
             FestivalAnalysisItem weatherRiskItem = items.stream()
                     .filter(item -> item.getItemType() == AnalysisItemType.WEATHER_RISK)
@@ -196,6 +204,42 @@ public class FestivalAnalysisService {
     }
 
     @Transactional(readOnly = true)
+    public ConflictRiskResponse getConflictRisk(Long analysisId) {
+        FestivalAnalysis analysis = getAnalysisEntity(analysisId);
+        FestivalAnalysisItem item = festivalAnalysisItemRepository.findByFestivalAnalysis_FestivalAnalysisIdAndItemType(analysisId, AnalysisItemType.CONFLICT_RISK)
+                .orElseThrow(() -> new ResourceNotFoundException("CONFLICT_RISK item not found: " + analysisId));
+        FestivalAnalysisConflict snapshot = festivalAnalysisConflictRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
+                .orElseThrow(() -> new AnalysisExecutionException("CONFLICT_RISK snapshot not found: " + analysisId));
+        List<ConflictRiskResponse.Event> events = festivalAnalysisConflictEventRepository
+                .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByEventYearAscStartDateAsc(item.getFestivalAnalysisItemId()).stream()
+                .map(e -> new ConflictRiskResponse.Event(e.getFestival() == null ? null : e.getFestival().getFestivalId(), e.getEventName(), e.getEventYear(), e.getSido(), e.getSigungu(), e.getRegionRelation(), e.getStartDate(), e.getEndDate(), e.getEventBasis(), e.getConflictType(), e.getOverlapDays(), e.getSameTheme(), e.getVisitorCount())).toList();
+        return new ConflictRiskResponse(item.getItemType(), item.getScore(), new ConflictRiskResponse.ConflictRisk(
+                new ConflictRiskResponse.TargetPeriod(snapshot.getTargetStartDate(), snapshot.getTargetEndDate()),
+                new ConflictRiskResponse.HistoryPeriod(snapshot.getHistoryStartYear(), snapshot.getHistoryEndYear()),
+                snapshot.getDirectOverlapCount(), snapshot.getNearbyPeriodCount(), snapshot.getHistoricalSamePeriodCount(),
+                snapshot.getSameRegionCount(), events));
+    }
+
+    private void saveConflictSnapshot(FestivalAnalysisItem item, FestivalPlan plan, likelion.festivalscope.analysis.conflict.ScheduleConflictAnalyzer.Result result) {
+        festivalAnalysisConflictRepository.save(FestivalAnalysisConflict.builder().festivalAnalysisItem(item)
+                .targetStartDate(plan.getStartDate()).targetEndDate(plan.getEndDate())
+                .historyStartYear(result.historyStartYear()).historyEndYear(result.historyEndYear())
+                .directOverlapCount((int) result.count(ConflictType.DIRECT_OVERLAP))
+                .nearbyPeriodCount((int) result.count(ConflictType.NEARBY_PERIOD))
+                .historicalSamePeriodCount((int) result.count(ConflictType.HISTORICAL_SAME_PERIOD))
+                .sameRegionCount(result.candidates().size())
+                .neighborRegionCount(0).build());
+        List<FestivalAnalysisConflictEvent> events = result.candidates().stream().map(c -> {
+            FestivalHistory h = c.history(); Festival f = h.getFestival();
+            return FestivalAnalysisConflictEvent.builder().festivalAnalysisItem(item).festival(f).eventName(f.getFestivalName())
+                    .eventYear(h.getYear()).sido(f.getSido()).sigungu(f.getSigungu()).startDate(h.getStartDate()).endDate(h.getEndDate())
+                    .eventBasis(c.eventBasis()).conflictType(c.conflictType()).regionRelation(c.regionRelation()).overlapDays(c.overlapDays())
+                    .visitorCount(h.getVisitorCount()).sameTheme(null).distanceKm(null).build();
+        }).toList();
+        festivalAnalysisConflictEventRepository.saveAll(events);
+    }
+
+    @Transactional(readOnly = true)
     public WeatherRiskResponse testWeatherRisk(Long planId) {
         FestivalPlan plan = festivalPlanRepository.findById(planId)
                 .orElseThrow(() -> new ResourceNotFoundException("FestivalPlan not found: " + planId));
@@ -217,7 +261,7 @@ public class FestivalAnalysisService {
         List<FestivalAnalysisDemand> rows = new ArrayList<>();
         result.regionalYears().forEach(row -> rows.add(FestivalAnalysisDemand.builder().festivalAnalysisItem(item).demandType(DemandType.REGIONAL).regionCode(row.code()).sido(plan.getSido()).sigungu(row.name()).statYear(row.year()).visitorCount(row.value()).build()));
         result.dailyRecords().forEach(row -> rows.add(FestivalAnalysisDemand.builder().festivalAnalysisItem(item).demandType(DemandType.SEASONAL).regionCode(row.regionCode()).sido(plan.getSido()).sigungu(row.regionName()).statYear(row.date().getYear()).statMonth(row.date().getMonthValue()).statDay(row.date().getDayOfMonth()).visitorCount(row.visitorCount()).build()));
-        festivalAnalysisDemandRepository.saveAll(rows);
+            festivalAnalysisDemandRepository.saveAll(rows);
         DemandFitResponse.Bus bus = result.accessibility().bus(); DemandFitResponse.Rail rail = result.accessibility().rail();
         festivalAnalysisAccessibilityRepository.save(FestivalAnalysisAccessibility.builder().festivalAnalysisItem(item).nearestBusStopName(bus.nearestStopName()).nearestBusStopDistanceM(bus.nearestStopDistanceM()).busStopCount500m(bus.stopCount500m()).busStopCount1km(bus.stopCount1km()).busRouteCount(bus.routeCount()).railAvailable(rail.available()).nearestStationName(rail.nearestStationName()).nearestStationDistanceM(rail.nearestStationDistanceM()).build());
     }
