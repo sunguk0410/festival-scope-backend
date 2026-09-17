@@ -165,17 +165,49 @@ public class FestivalAnalysisService {
         List<TourismLinkageResponse.Poi> pois = festivalAnalysisPoiRepository
                 .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByDistanceMAsc(item.getFestivalAnalysisItemId())
                 .stream().map(this::toTourismPoi).toList();
+        List<TourismLinkageResponse.Poi> culture = pois.stream().filter(p -> p.poiType() == PoiType.TOURIST_ATTRACTION || p.poiType() == PoiType.CULTURAL_FACILITY).toList();
+        List<TourismLinkageResponse.Poi> commerce = pois.stream().filter(p -> p.poiType() == PoiType.RESTAURANT || p.poiType() == PoiType.SHOPPING).toList();
+        List<TourismLinkageResponse.Poi> accommodation = pois.stream().filter(p -> p.poiType() == PoiType.ACCOMMODATION).toList();
+        TourismLinkageResponse.PoiSummary poiSummary = new TourismLinkageResponse.PoiSummary(
+                new TourismLinkageResponse.RangeCount(
+                        snapshot.getTourismCultureWithin3kmCount() + snapshot.getFoodShoppingWithin3kmCount() + snapshot.getAccommodationWithin3kmCount(),
+                        snapshot.getTourismCultureWithin3kmCount(), snapshot.getFoodShoppingWithin3kmCount(), snapshot.getAccommodationWithin3kmCount()),
+                new TourismLinkageResponse.RangeCount(
+                        snapshot.getTourismCultureBetween3And5kmCount() + snapshot.getFoodShoppingBetween3And5kmCount() + snapshot.getAccommodationBetween3And5kmCount(),
+                        snapshot.getTourismCultureBetween3And5kmCount(), snapshot.getFoodShoppingBetween3And5kmCount(), snapshot.getAccommodationBetween3And5kmCount()),
+                new TourismLinkageResponse.RangeCount(snapshot.getTotalCandidatePoiCount(), snapshot.getTourismCultureCount(), snapshot.getFoodShoppingCount(), snapshot.getAccommodationCount()));
+        TourismLinkageResponse.RegionalIndicators indicators = new TourismLinkageResponse.RegionalIndicators(
+                indicator(snapshot.getResourceDemandBaseYm(), snapshot.getResourceDemandCode(), snapshot.getResourceDemandName(), snapshot.getResourceDemandValue()),
+                indicator(snapshot.getConsumptionIntensityBaseYm(), snapshot.getConsumptionIntensityCode(), snapshot.getConsumptionIntensityName(), snapshot.getConsumptionIntensityValue()),
+                indicator(snapshot.getStayIntensityBaseYm(), snapshot.getStayIntensityCode(), snapshot.getStayIntensityName(), snapshot.getStayIntensityValue()));
         return new TourismLinkageResponse(item.getItemType(), item.getScore(), new TourismLinkageResponse.TourismLinkage(
                 snapshot.getTotalCandidatePoiCount(), snapshot.getTourismCultureCount(), snapshot.getFoodShoppingCount(),
                 snapshot.getAccommodationCount(), snapshot.getTourismLinkageSummary(), snapshot.getConsumptionLinkageSummary(),
-                snapshot.getStayLinkageSummary(), pois.stream().filter(p -> p.poiType() == PoiType.TOURIST_ATTRACTION || p.poiType() == PoiType.CULTURAL_FACILITY).limit(5).toList(),
-                pois.stream().filter(p -> p.poiType() == PoiType.RESTAURANT || p.poiType() == PoiType.SHOPPING).limit(5).toList(),
-                pois.stream().filter(p -> p.poiType() == PoiType.ACCOMMODATION).limit(5).toList()));
+                snapshot.getStayLinkageSummary(), poiSummary, indicators, culture.stream().limit(5).toList(),
+                commerce.stream().limit(5).toList(), accommodation.stream().limit(5).toList(),
+                groups(culture), groups(commerce), groups(accommodation)));
+    }
+
+    private TourismLinkageResponse.RangeCount rangeCount(List<TourismLinkageResponse.Poi> culture, List<TourismLinkageResponse.Poi> commerce, List<TourismLinkageResponse.Poi> accommodation, PoiDistanceRange range) {
+        int c = (int) culture.stream().filter(p -> p.distanceRange() == range).count();
+        int f = (int) commerce.stream().filter(p -> p.distanceRange() == range).count();
+        int a = (int) accommodation.stream().filter(p -> p.distanceRange() == range).count();
+        return new TourismLinkageResponse.RangeCount(c + f + a, c, f, a);
+    }
+
+    private TourismLinkageResponse.Indicator indicator(String baseYm, String code, String name, BigDecimal value) {
+        return value == null ? null : new TourismLinkageResponse.Indicator(baseYm, code, name, value);
+    }
+
+    private TourismLinkageResponse.PoiRangeGroups groups(List<TourismLinkageResponse.Poi> pois) {
+        return new TourismLinkageResponse.PoiRangeGroups(
+                pois.stream().filter(p -> p.distanceRange() == PoiDistanceRange.WITHIN_3KM).limit(5).toList(),
+                pois.stream().filter(p -> p.distanceRange() == PoiDistanceRange.BETWEEN_3_AND_5KM).limit(5).toList());
     }
 
     private TourismLinkageResponse.Poi toTourismPoi(FestivalAnalysisPoi poi) {
         return new TourismLinkageResponse.Poi(poi.getContentId(), poi.getPoiName(), poi.getContentTypeId(), poi.getPoiType(),
-                poi.getLinkageType(), poi.getDistanceM(), poi.getLatitude(), poi.getLongitude(), poi.getAddress(), poi.getImageUrl());
+                poi.getLinkageType(), poi.getDistanceM(), poi.getDistanceRange(), poi.getLatitude(), poi.getLongitude(), poi.getAddress(), poi.getImageUrl());
     }
 
     @Transactional(readOnly = true)
@@ -378,16 +410,48 @@ public class FestivalAnalysisService {
                 .tourismCultureCount(result.tourismCultureCount())
                 .foodShoppingCount(result.foodShoppingCount())
                 .accommodationCount(result.accommodationCount())
+                .tourismCultureWithin3kmCount(result.tourismCultureWithin3kmCount())
+                .tourismCultureBetween3And5kmCount(result.tourismCultureBetween3And5kmCount())
+                .tourismCultureWithin5kmCount(result.tourismCultureWithin5kmCount())
+                .foodShoppingWithin3kmCount(result.foodShoppingWithin3kmCount())
+                .foodShoppingBetween3And5kmCount(result.foodShoppingBetween3And5kmCount())
+                .foodShoppingWithin5kmCount(result.foodShoppingWithin5kmCount())
+                .accommodationWithin3kmCount(result.accommodationWithin3kmCount())
+                .accommodationBetween3And5kmCount(result.accommodationBetween3And5kmCount())
+                .accommodationWithin5kmCount(result.accommodationWithin5kmCount())
+                .resourceDemandBaseYm(result.indicators().resource() == null ? null : result.indicators().resource().baseYm())
+                .resourceDemandCode(result.indicators().resource() == null ? null : result.indicators().resource().code())
+                .resourceDemandName(result.indicators().resource() == null ? null : result.indicators().resource().name())
+                .resourceDemandValue(result.indicators().resource() == null ? null : result.indicators().resource().value())
+                .consumptionIntensityBaseYm(result.indicators().consumption() == null ? null : result.indicators().consumption().baseYm())
+                .consumptionIntensityCode(result.indicators().consumption() == null ? null : result.indicators().consumption().code())
+                .consumptionIntensityName(result.indicators().consumption() == null ? null : result.indicators().consumption().name())
+                .consumptionIntensityValue(result.indicators().consumption() == null ? null : result.indicators().consumption().value())
+                .stayIntensityBaseYm(result.indicators().stay() == null ? null : result.indicators().stay().baseYm())
+                .stayIntensityCode(result.indicators().stay() == null ? null : result.indicators().stay().code())
+                .stayIntensityName(result.indicators().stay() == null ? null : result.indicators().stay().name())
+                .stayIntensityValue(result.indicators().stay() == null ? null : result.indicators().stay().value())
                 .tourismLinkageSummary(result.tourismLinkageSummary())
                 .consumptionLinkageSummary(result.consumptionLinkageSummary())
                 .stayLinkageSummary(result.stayLinkageSummary())
                 .build());
-        festivalAnalysisPoiRepository.saveAll(result.candidates().stream().map(candidate -> {
+        List<TourismLinkageAnalyzer.Candidate> representativePois = new ArrayList<>();
+        representativePois.addAll(result.candidates().stream()
+                .filter(candidate -> candidate.poiType() == PoiType.TOURIST_ATTRACTION || candidate.poiType() == PoiType.CULTURAL_FACILITY)
+                .limit(5).toList());
+        representativePois.addAll(result.candidates().stream()
+                .filter(candidate -> candidate.poiType() == PoiType.RESTAURANT || candidate.poiType() == PoiType.SHOPPING)
+                .limit(5).toList());
+        representativePois.addAll(result.candidates().stream()
+                .filter(candidate -> candidate.poiType() == PoiType.ACCOMMODATION)
+                .limit(5).toList());
+        festivalAnalysisPoiRepository.saveAll(representativePois.stream().map(candidate -> {
             TourApiClient.Poi poi = candidate.poi();
             return FestivalAnalysisPoi.builder().festivalAnalysisItem(item).contentId(poi.contentId())
                     .contentTypeId(poi.contentTypeId()).poiName(poi.title()).poiType(candidate.poiType())
                     .distanceM(candidate.distanceM()).latitude(poi.latitude()).longitude(poi.longitude())
-                    .address(poi.address()).imageUrl(poi.imageUrl()).linkageType(candidate.linkageType()).build();
+                    .address(poi.address()).imageUrl(poi.imageUrl()).linkageType(candidate.linkageType())
+                    .distanceRange(candidate.distanceRange()).build();
         }).toList());
     }
 

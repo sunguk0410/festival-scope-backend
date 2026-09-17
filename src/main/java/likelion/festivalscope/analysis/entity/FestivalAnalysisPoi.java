@@ -21,5 +21,6 @@ public class FestivalAnalysisPoi extends CreatedAtEntity {
     @Column(precision = 10, scale = 7) private BigDecimal longitude;
     @Column(length = 255) private String address;
     @Column(name = "image_url", length = 500) private String imageUrl;
+    @Enumerated(EnumType.STRING) @Column(name = "distance_range", length = 30) private PoiDistanceRange distanceRange;
     @Enumerated(EnumType.STRING) @Column(name = "linkage_type", length = 30) private LinkageType linkageType;
 }
