@@ -8,7 +8,6 @@ import likelion.festivalscope.common.util.RegionNameNormalizer;
 import likelion.festivalscope.external.bus.BusRouteClient;
 import likelion.festivalscope.external.bus.BusStopClient;
 import likelion.festivalscope.external.tourism.RegionalVisitorClient;
-import likelion.festivalscope.analysis.entity.RegionalVisitorStat;
 import likelion.festivalscope.analysis.repository.RegionalVisitorStatRepository;
 import likelion.festivalscope.analysis.service.RegionalVisitorCollector;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
@@ -30,7 +29,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Component
@@ -79,12 +77,22 @@ public class DemandFitAnalyzer {
             throw new AnalysisExecutionException("시도 관광수요 지역 코드를 찾을 수 없습니다: " + plan.getSido());
         }
         regionalVisitorCollector.ensureRecentYearsCollected(endYear, 5);
-        List<RegionalVisitorStat> stats = regionalVisitorStatRepository.findAllByBaseYmdBetween(from, to);
         String targetSignguCode = resolveTargetSignguCode(plan, from, to);
-        List<RegionalVisitorClient.VisitorRecord> records = stats.stream().map(this::toVisitorRecord).toList();
+        List<RegionalYear> years = regionalVisitorStatRepository.findRegionalYearAggregates(from, to).stream()
+                .map(row -> new RegionalYear(row.getSignguName(), row.getSignguCode(), row.getSidoName(),
+                        row.getStatYear(), row.getVisitorCount()))
+                .toList();
+        List<RegionalVisitorClient.VisitorRecord> daily = targetSignguCode == null
+                ? List.of()
+                : regionalVisitorStatRepository.findDailyBySignguCodeAndBaseYmdBetween(targetSignguCode, from, to)
+                .stream()
+                .map(row -> new RegionalVisitorClient.VisitorRecord(
+                        row.getBaseYmd(), row.getSignguCode(), row.getSignguName(), row.getSidoName(),
+                        row.getVisitorCount()))
+                .toList();
         // API가 0건을 반환한 경우에도 분석 자체는 성공시키되, 수요 지표는 null로 반환한다.
         AccessibilityData accessibility = accessibility(plan);
-        return build(plan, records, accessibility, endYear, targetSignguCode);
+        return buildFromAggregates(plan, years, daily, accessibility, endYear);
     }
 
     public Result fromSnapshots(FestivalPlan plan, List<FestivalAnalysisDemand> rows,
@@ -112,18 +120,10 @@ public class DemandFitAnalyzer {
         return buildFromAggregates(plan, regionYears, daily, accessibility, LocalDate.now().getYear() - 1);
     }
 
-    private RegionalVisitorClient.VisitorRecord toVisitorRecord(RegionalVisitorStat stat) {
-        return new RegionalVisitorClient.VisitorRecord(stat.getBaseYmd(), stat.getSignguCode(),
-                stat.getSignguName(), stat.getSidoName(), stat.getVisitorCount());
-    }
-
     private String resolveTargetSignguCode(FestivalPlan plan, LocalDate from, LocalDate to) {
         List<String> matchingCodes = regionalVisitorStatRepository
-                .findAllBySignguNameAndBaseYmdBetween(plan.getSigungu(), from, to).stream()
-                .filter(row -> RegionNameNormalizer.sameSido(plan.getSido(), row.getSidoName())
-                        || codeBelongsToSido(plan.getSido(), row.getSignguCode()))
-                .map(RegionalVisitorStat::getSignguCode)
-                .distinct()
+                .findDistinctSignguCodesBySignguNameAndBaseYmdBetween(plan.getSigungu(), from, to).stream()
+                .filter(code -> codeBelongsToSido(plan.getSido(), code))
                 .toList();
         if (matchingCodes.size() == 1) {
             return matchingCodes.get(0);
@@ -160,27 +160,6 @@ public class DemandFitAnalyzer {
         return sido.replace("특별자치도", "").replace("특별시", "")
                 .replace("광역시", "").replace("자치도", "")
                 .replace("도", "").trim();
-    }
-
-    private Result build(FestivalPlan plan, List<RegionalVisitorClient.VisitorRecord> records,
-                         AccessibilityData accessibility, int endYear, String targetSignguCode) {
-        Map<String, List<RegionalVisitorClient.VisitorRecord>> byRegion = records.stream()
-                .collect(Collectors.groupingBy(RegionalVisitorClient.VisitorRecord::regionCode));
-        List<RegionalYear> years = byRegion.values().stream()
-                .flatMap(list -> list.stream()
-                        .collect(Collectors.groupingBy(r -> r.regionCode() + "|" + r.date().getYear()))
-                        .entrySet().stream()
-                        .map(entry -> {
-                            RegionalVisitorClient.VisitorRecord first = entry.getValue().get(0);
-                            long total = entry.getValue().stream()
-                                    .mapToLong(RegionalVisitorClient.VisitorRecord::visitorCount).sum();
-                            return new RegionalYear(first.regionName(), first.regionCode(), first.sidoName(), first.date().getYear(), total);
-                        }))
-                .toList();
-        List<RegionalVisitorClient.VisitorRecord> daily = records.stream()
-                .filter(r -> targetSignguCode != null && r.regionCode().equals(targetSignguCode))
-                .toList();
-        return buildFromAggregates(plan, years, daily, accessibility, endYear);
     }
 
     private Result buildFromAggregates(FestivalPlan plan, List<RegionalYear> years,

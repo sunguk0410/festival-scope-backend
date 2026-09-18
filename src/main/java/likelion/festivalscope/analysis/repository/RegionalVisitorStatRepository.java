@@ -31,10 +31,55 @@ public interface RegionalVisitorStatRepository extends JpaRepository<RegionalVis
             + "WHERE r.baseYmd BETWEEN :from AND :to")
     List<String> findKeysByBaseYmdBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
-    List<RegionalVisitorStat> findAllByBaseYmdBetween(LocalDate from, LocalDate to);
-    List<RegionalVisitorStat> findAllBySignguNameAndBaseYmdBetween(String signguName, LocalDate from, LocalDate to);
-    List<RegionalVisitorStat> findBySignguCodeAndBaseYmdBetween(String signguCode, LocalDate from, LocalDate to);
-    List<RegionalVisitorStat> findAllBySignguCodeAndBaseYmdBetween(String signguCode, LocalDate from, LocalDate to);
-    List<RegionalVisitorStat> findAllBySidoNameAndSignguNameAndBaseYmdBetween(String sidoName, String signguName,
-                                                                                LocalDate from, LocalDate to);
+    @Query("""
+            SELECT r.signguCode AS signguCode,
+                   r.signguName AS signguName,
+                   r.sidoName AS sidoName,
+                   FUNCTION('YEAR', r.baseYmd) AS statYear,
+                   SUM(r.visitorCount) AS visitorCount
+            FROM RegionalVisitorStat r
+            WHERE r.baseYmd BETWEEN :from AND :to
+            GROUP BY r.signguCode, r.signguName, r.sidoName, FUNCTION('YEAR', r.baseYmd)
+            """)
+    List<RegionalYearProjection> findRegionalYearAggregates(@Param("from") LocalDate from,
+                                                             @Param("to") LocalDate to);
+
+    @Query("SELECT DISTINCT r.signguCode FROM RegionalVisitorStat r "
+            + "WHERE r.signguName = :signguName AND r.baseYmd BETWEEN :from AND :to")
+    List<String> findDistinctSignguCodesBySignguNameAndBaseYmdBetween(
+            @Param("signguName") String signguName,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
+
+    @Query("""
+            SELECT r.baseYmd AS baseYmd,
+                   r.signguCode AS signguCode,
+                   r.signguName AS signguName,
+                   r.sidoName AS sidoName,
+                   r.visitorCount AS visitorCount
+            FROM RegionalVisitorStat r
+            WHERE r.signguCode = :signguCode
+              AND r.baseYmd BETWEEN :from AND :to
+            ORDER BY r.baseYmd
+            """)
+    List<DailyVisitorProjection> findDailyBySignguCodeAndBaseYmdBetween(
+            @Param("signguCode") String signguCode,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to);
+
+    interface RegionalYearProjection {
+        String getSignguCode();
+        String getSignguName();
+        String getSidoName();
+        Integer getStatYear();
+        Long getVisitorCount();
+    }
+
+    interface DailyVisitorProjection {
+        LocalDate getBaseYmd();
+        String getSignguCode();
+        String getSignguName();
+        String getSidoName();
+        Long getVisitorCount();
+    }
 }
