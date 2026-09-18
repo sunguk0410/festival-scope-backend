@@ -10,6 +10,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface RegionalVisitorStatRepository extends JpaRepository<RegionalVisitorStat, Long> {
+    long countByBaseYmdBetween(LocalDate start, LocalDate end);
+
     @Query("SELECT MIN(r.baseYmd) FROM RegionalVisitorStat r WHERE r.baseYmd BETWEEN :from AND :to")
     LocalDate findMinDate(@Param("from") LocalDate from, @Param("to") LocalDate to);
 

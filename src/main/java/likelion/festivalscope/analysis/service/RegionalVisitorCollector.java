@@ -13,6 +13,8 @@ import java.util.List;
 @Slf4j
 @Service
 public class RegionalVisitorCollector {
+    private static final long COMPLETED_YEAR_MIN_COUNT = 90_000L;
+
     private final RegionalVisitorClient client;
     private final RegionalVisitorStatRepository repository;
     private final RegionalVisitorBatchWriter batchWriter;
@@ -37,6 +39,12 @@ public class RegionalVisitorCollector {
     public void ensureYearCollected(int year) {
         LocalDate from = LocalDate.of(year, 1, 1);
         LocalDate to = LocalDate.of(year, 12, 31);
+        long existingCount = repository.countByBaseYmdBetween(from, to);
+        if (existingCount >= COMPLETED_YEAR_MIN_COUNT) {
+            log.info("Regional visitor collection skipped: year={}, existingCount={}", year, existingCount);
+            return;
+        }
+
         long expectedDays = ChronoUnit.DAYS.between(from, to) + 1;
         LocalDate minDate = repository.findMinDate(from, to);
         LocalDate maxDate = repository.findMaxDate(from, to);
