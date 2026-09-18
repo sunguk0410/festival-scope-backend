@@ -5,7 +5,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-public record ConflictRiskResponse(AnalysisItemType itemType, BigDecimal score, ConflictRisk conflictRisk) {
+public record ConflictRiskResponse(AnalysisItemType itemType, BigDecimal score, ConflictRisk conflictRisk,
+                                   List<RecommendationResponse> recommendations) {
     public record ConflictRisk(TargetPeriod targetPeriod, HistoryPeriod historyPeriod,
                                Integer directOverlapCount, Integer nearbyPeriodCount,
                                Integer historicalSamePeriodCount, Integer sameRegionCount,

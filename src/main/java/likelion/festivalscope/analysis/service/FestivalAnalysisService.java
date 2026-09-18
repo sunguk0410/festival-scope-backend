@@ -205,7 +205,8 @@ public class FestivalAnalysisService {
                 snapshot.getAccommodationCount(), snapshot.getTourismLinkageSummary(), snapshot.getConsumptionLinkageSummary(),
                 snapshot.getStayLinkageSummary(), poiSummary, indicators, culture.stream().limit(5).toList(),
                 commerce.stream().limit(5).toList(), accommodation.stream().limit(5).toList(),
-                groups(culture), groups(commerce), groups(accommodation)));
+                groups(culture), groups(commerce), groups(accommodation)),
+                recommendationsForItem(item));
     }
 
     private TourismLinkageResponse.RangeCount rangeCount(List<TourismLinkageResponse.Poi> culture, List<TourismLinkageResponse.Poi> commerce, List<TourismLinkageResponse.Poi> accommodation, PoiDistanceRange range) {
@@ -233,19 +234,11 @@ public class FestivalAnalysisService {
     @Transactional(readOnly = true)
     public FestivalAnalysisResponse getAnalysis(Long analysisId) {
         FestivalAnalysis analysis = getAnalysisEntity(analysisId);
-        List<FestivalAnalysisRecommendation> recommendations = festivalAnalysisRecommendationRepository
-                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(analysisId);
-        Map<Long, List<RecommendationResponse>> recommendationsByItem = recommendations.stream()
-                .collect(Collectors.groupingBy(
-                        recommendation -> recommendation.getFestivalAnalysisItem().getFestivalAnalysisItemId(),
-                        LinkedHashMap::new,
-                        Collectors.mapping(this::toRecommendationResponse, Collectors.toList())));
         List<FestivalAnalysisResponse.ItemResponse> items = festivalAnalysisItemRepository
                 .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByFestivalAnalysisItemIdAsc(analysisId)
                 .stream()
                 .map(item -> new FestivalAnalysisResponse.ItemResponse(
-                        item.getFestivalAnalysisItemId(), item.getItemType(), item.getScore(),
-                        recommendationsByItem.getOrDefault(item.getFestivalAnalysisItemId(), List.of())))
+                        item.getFestivalAnalysisItemId(), item.getItemType(), item.getScore()))
                 .toList();
         return new FestivalAnalysisResponse(
                 analysis.getFestivalAnalysisId(),
@@ -266,6 +259,18 @@ public class FestivalAnalysisService {
                 recommendation.getTitle(),
                 recommendation.getContent(),
                 recommendation.getDisplayOrder());
+    }
+
+    private List<RecommendationResponse> recommendationsForItem(FestivalAnalysisItem item) {
+        return festivalAnalysisRecommendationRepository
+                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(
+                        item.getFestivalAnalysis().getFestivalAnalysisId())
+                .stream()
+                .filter(recommendation -> recommendation.getFestivalAnalysisItem() != null
+                        && recommendation.getFestivalAnalysisItem().getFestivalAnalysisItemId()
+                        .equals(item.getFestivalAnalysisItemId()))
+                .map(this::toRecommendationResponse)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -296,7 +301,8 @@ public class FestivalAnalysisService {
         return new TargetVisitorResponse(item.getItemType(), item.getScore(), new TargetVisitorResponse.TargetVisitor(
                 snapshot.getTargetVisitorCount(), snapshot.getSimilarFestivalCount(), snapshot.getVisitorDataCount(),
                 snapshot.getVisitorAverage(), snapshot.getVisitorMedian(), snapshot.getVisitorMin(), snapshot.getVisitorMax(),
-                snapshot.getGapRate(), snapshot.getSimilarityThreshold(), sameFestivalResponses, similarResponses));
+                snapshot.getGapRate(), snapshot.getSimilarityThreshold(), sameFestivalResponses, similarResponses),
+                recommendationsForItem(item));
     }
 
     private TargetVisitorResponse.SimilarFestival toSimilarFestivalResponse(FestivalAnalysisSimilar similar, int rank) {
@@ -337,7 +343,8 @@ public class FestivalAnalysisService {
         DemandFitAnalyzer.Result result = demandFitAnalyzer.fromSnapshots(analysis.getFestivalPlan(),
                 festivalAnalysisDemandRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()),
                 festivalAnalysisAccessibilityRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElse(null));
-        return new DemandFitResponse(item.getItemType(), item.getScore(), result.regionalDemand(), result.seasonalDemand(), result.accessibility());
+        return new DemandFitResponse(item.getItemType(), item.getScore(), result.regionalDemand(), result.seasonalDemand(), result.accessibility(),
+                recommendationsForItem(item));
     }
 
     @Transactional(readOnly = true)
@@ -349,7 +356,10 @@ public class FestivalAnalysisService {
                 .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
                 .orElseThrow(() -> new AnalysisExecutionException("WEATHER_RISK snapshot not found: " + analysisId));
         try {
-            return objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
+            WeatherRiskResponse response = objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
+            return new WeatherRiskResponse(response.itemType(), response.score(), response.station(), response.analysisPeriod(),
+                    response.rain(), response.temperature(), response.wind(), response.festivalCondition(),
+                    recommendationsForItem(item));
         } catch (Exception exception) {
             throw new AnalysisExecutionException("WEATHER_RISK snapshot parsing failed: " + analysisId, exception);
         }
@@ -369,7 +379,7 @@ public class FestivalAnalysisService {
                 new ConflictRiskResponse.TargetPeriod(snapshot.getTargetStartDate(), snapshot.getTargetEndDate()),
                 new ConflictRiskResponse.HistoryPeriod(snapshot.getHistoryStartYear(), snapshot.getHistoryEndYear()),
                 snapshot.getDirectOverlapCount(), snapshot.getNearbyPeriodCount(), snapshot.getHistoricalSamePeriodCount(),
-                snapshot.getSameRegionCount(), events));
+                snapshot.getSameRegionCount(), events), recommendationsForItem(item));
     }
 
     private void saveConflictSnapshot(FestivalAnalysisItem item, FestivalPlan plan, likelion.festivalscope.analysis.conflict.ScheduleConflictAnalyzer.Result result) {
@@ -557,7 +567,7 @@ public class FestivalAnalysisService {
         return new TrendFitResponse(
                 item.getItemType(), item.getScore(),
                 new TrendFitResponse.IntegratedTrend(integratedInterest, integratedGrowth),
-                keywordTrends, aroundEvent);
+                keywordTrends, aroundEvent, recommendationsForItem(item));
     }
 
     private void saveTrendKeywords(FestivalAnalysisItem item, TrendAnalysisResult result) {

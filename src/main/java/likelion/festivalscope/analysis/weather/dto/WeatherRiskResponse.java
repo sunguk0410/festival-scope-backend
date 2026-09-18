@@ -2,12 +2,15 @@ package likelion.festivalscope.analysis.weather.dto;
 
 import likelion.festivalscope.analysis.entity.AnalysisItemType;
 import likelion.festivalscope.plan.entity.VenueType;
+import likelion.festivalscope.analysis.dto.response.RecommendationResponse;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record WeatherRiskResponse(AnalysisItemType itemType, BigDecimal score, Station station,
                                   AnalysisPeriod analysisPeriod, Rain rain, Temperature temperature,
-                                  Wind wind, FestivalCondition festivalCondition) {
+                                  Wind wind, FestivalCondition festivalCondition,
+                                  List<RecommendationResponse> recommendations) {
     public record Station(String stationId, String stationName, BigDecimal distanceKm) {}
     public record AnalysisPeriod(int requestedYears, int actualYears, int startYear, int endYear, int totalDays) {}
     public record Rain(int occurrenceYears, BigDecimal occurrenceRate, int validDays, int rainDays,

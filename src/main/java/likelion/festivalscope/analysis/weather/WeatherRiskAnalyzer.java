@@ -70,7 +70,8 @@ public class WeatherRiskAnalyzer {
                 new WeatherRiskResponse.Rain(result.occurrenceYears(), result.occurrenceRate(), result.validRainDays(), result.rainDays(), result.rainDayRate(), result.averageRainfallMm()),
                 new WeatherRiskResponse.Temperature(result.validTemperatureDays(), result.averageTemperature(), result.averageMaxTemperature(), result.averageMinTemperature(), result.hotOccurrenceYears(), result.hotOccurrenceRate(), result.coldOccurrenceYears(), result.coldOccurrenceRate()),
                 new WeatherRiskResponse.Wind(result.validWindDays(), result.averageWindSpeed(), result.maxWindSpeed(), result.strongWindOccurrenceYears(), result.strongWindOccurrenceRate(), result.strongWindDays(), result.strongWindDayRate()),
-                new WeatherRiskResponse.FestivalCondition(plan.getVenueType()));
+                new WeatherRiskResponse.FestivalCondition(plan.getVenueType()),
+                java.util.List.of());
     }
 
     static LocalDate sameMonthDay(int year, LocalDate date) {

@@ -11,7 +11,8 @@ public record TrendFitResponse(
         @Schema(description = "TREND_FIT 점수 정책이 미정이므로 현재 null일 수 있음. null은 0점이 아님", example = "null", nullable = true) BigDecimal score,
         @Schema(description = "모든 키워드의 통합 연도별 검색 관심도와 증감률") IntegratedTrend integratedTrend,
         @Schema(description = "키워드별 연도별 검색 관심도와 증감률") List<KeywordTrend> keywords,
-        @Schema(description = "개최 예정 시기 기준 전년도 ±3개월 검색 관심도") List<PreviousYearAroundEventPeriod> previousYearAroundEventPeriod
+        @Schema(description = "개최 예정 시기 기준 전년도 ±3개월 검색 관심도") List<PreviousYearAroundEventPeriod> previousYearAroundEventPeriod,
+        List<RecommendationResponse> recommendations
 ) {
     public record IntegratedTrend(
             @Schema(description = "연도별 검색 관심도. 해당 연도의 월별 ratio 평균") List<YearlyInterest> yearlyInterest,

@@ -20,7 +20,6 @@ public record FestivalAnalysisResponse(
     public record ItemResponse(
             @Schema(description = "FestivalAnalysisItem ID", example = "1") Long itemId,
             @Schema(description = "분석 항목 유형", example = "TARGET_VISITOR") AnalysisItemType itemType,
-            @Schema(description = "분석 항목 점수. 아직 계산되지 않은 항목은 null", example = "70.00", nullable = true) BigDecimal score,
-            List<RecommendationResponse> recommendations
+            @Schema(description = "분석 항목 점수. 아직 계산되지 않은 항목은 null", example = "70.00", nullable = true) BigDecimal score
     ) {}
 }
