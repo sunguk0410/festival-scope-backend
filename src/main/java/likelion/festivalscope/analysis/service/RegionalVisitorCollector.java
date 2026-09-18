@@ -1,28 +1,32 @@
 package likelion.festivalscope.analysis.service;
 
-import jakarta.transaction.Transactional;
-import likelion.festivalscope.analysis.entity.RegionalVisitorStat;
-import likelion.festivalscope.analysis.repository.RegionalVisitorStatRepository;
 import likelion.festivalscope.external.tourism.RegionalVisitorClient;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
-import lombok.RequiredArgsConstructor;
+import likelion.festivalscope.analysis.repository.RegionalVisitorStatRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RegionalVisitorCollector {
     private final RegionalVisitorClient client;
     private final RegionalVisitorStatRepository repository;
+    private final RegionalVisitorBatchWriter batchWriter;
+    private final int batchSize;
+
+    public RegionalVisitorCollector(RegionalVisitorClient client,
+                                    RegionalVisitorStatRepository repository,
+                                    RegionalVisitorBatchWriter batchWriter,
+                                    @org.springframework.beans.factory.annotation.Value("${tourism.visitor.batch-size:500}") int batchSize) {
+        this.client = client;
+        this.repository = repository;
+        this.batchWriter = batchWriter;
+        this.batchSize = batchSize;
+    }
 
     public void ensureRecentYearsCollected(int latestCompletedYear, int yearCount) {
         for (int year = latestCompletedYear; year > latestCompletedYear - yearCount; year--) {
@@ -30,7 +34,6 @@ public class RegionalVisitorCollector {
         }
     }
 
-    @Transactional
     public void ensureYearCollected(int year) {
         LocalDate from = LocalDate.of(year, 1, 1);
         LocalDate to = LocalDate.of(year, 12, 31);
@@ -52,28 +55,17 @@ public class RegionalVisitorCollector {
         }
         log.info("Regional visitor collection started: year={}, expectedDays={}, minDate={}, maxDate={}, distinctDates={}, rowsWithoutSido={}",
                 year, expectedDays, minDate, maxDate, actualDays, rowsWithoutSido);
-        List<RegionalVisitorClient.VisitorRecord> records = client.fetchAll(from, to);
-        if (records.isEmpty()) {
+        batchWriter.deleteYear(from, to);
+        int[] savedCount = {0};
+        client.fetchPagesWithMetadata(from, to, page -> {
+            int saved = batchWriter.saveBatch(page.records(), batchSize);
+            savedCount[0] += saved;
+            log.info("Regional visitor page processed: year={}, page={}/{}, fetched={}, filtered={}, saved={}",
+                    year, page.page(), page.totalPages(), page.fetched(), page.filtered(), saved);
+        });
+        if (savedCount[0] == 0) {
             throw new AnalysisExecutionException("Regional visitor API returned no normalized records: year=" + year);
         }
-        repository.deleteAllByBaseYmdBetween(from, to);
-        repository.flush();
-        Map<String, RegionalVisitorClient.VisitorRecord> uniqueRecords = records.stream()
-                .collect(Collectors.toMap(
-                        record -> record.date() + "|" + record.regionCode(),
-                        Function.identity(),
-                        (first, duplicate) -> first,
-                        LinkedHashMap::new));
-        log.info("Regional visitor records normalized for storage: year={}, rawRecordCount={}, uniqueRecordCount={}",
-                year, records.size(), uniqueRecords.size());
-        List<RegionalVisitorStat> stats = uniqueRecords.values().stream().map(record -> RegionalVisitorStat.builder()
-                .baseYmd(record.date())
-                .signguCode(record.regionCode())
-                .signguName(record.regionName())
-                .sidoName(record.sidoName())
-                .visitorCount(record.visitorCount())
-                .build()).toList();
-        repository.saveAll(stats);
-        log.info("Regional visitor collection completed: year={}, recordCount={}", year, stats.size());
+        log.info("Regional visitor collection completed: year={}, savedCount={}", year, savedCount[0]);
     }
 }

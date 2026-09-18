@@ -25,6 +25,10 @@ public interface RegionalVisitorStatRepository extends JpaRepository<RegionalVis
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     void deleteAllByBaseYmdBetween(LocalDate from, LocalDate to);
 
+    @Query("SELECT CONCAT(r.baseYmd, '|', r.signguCode) FROM RegionalVisitorStat r "
+            + "WHERE r.baseYmd BETWEEN :from AND :to")
+    List<String> findKeysByBaseYmdBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
     List<RegionalVisitorStat> findAllByBaseYmdBetween(LocalDate from, LocalDate to);
     List<RegionalVisitorStat> findAllBySignguNameAndBaseYmdBetween(String signguName, LocalDate from, LocalDate to);
     List<RegionalVisitorStat> findBySignguCodeAndBaseYmdBetween(String signguCode, LocalDate from, LocalDate to);

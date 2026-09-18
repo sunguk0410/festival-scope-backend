@@ -18,8 +18,10 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -42,15 +44,18 @@ public class RegionalVisitorClient {
     private final String baseUrl;
     private final String key;
     private final String endpoint;
+    private final int pageSize;
 
     public RegionalVisitorClient(
             @Value("${tourism.visitor.base-url:https://apis.data.go.kr/B551011/DataLabService}") String baseUrl,
             @Value("${tourism.visitor.service-key:}") String key,
-            @Value("${tourism.visitor.endpoint:/locgoRegnVisitrDDList}") String endpoint) {
+            @Value("${tourism.visitor.endpoint:/locgoRegnVisitrDDList}") String endpoint,
+            @Value("${tourism.visitor.page-size:3000}") int pageSize) {
         this.client = RestClient.builder().build();
         this.baseUrl = baseUrl;
         this.key = normalizeServiceKey(key);
         this.endpoint = endpoint;
+        this.pageSize = pageSize;
     }
 
     private String normalizeServiceKey(String value) {
@@ -62,19 +67,22 @@ public class RegionalVisitorClient {
         return normalized;
     }
 
-    public List<VisitorRecord> fetchAll(LocalDate from, LocalDate to) {
+    public void fetchPages(LocalDate from, LocalDate to, Consumer<List<VisitorRecord>> pageConsumer) {
+        fetchPagesWithMetadata(from, to, page -> pageConsumer.accept(page.records()));
+    }
+
+    public void fetchPagesWithMetadata(LocalDate from, LocalDate to, Consumer<VisitorPage> pageConsumer) {
         if (key.isBlank()) {
             throw new AnalysisExecutionException("관광수요 방문자 API 인증키가 설정되지 않았습니다.");
         }
 
-        List<Raw> all = new ArrayList<>();
         int page = 1;
         int total = Integer.MAX_VALUE;
-        while ((page - 1) * 10_000 < total) {
+        while ((page - 1) * pageSize < total) {
             int pageNo = page;
             String requestUrl = baseUrl + endpoint
                     + "?serviceKey=" + key
-                    + "&numOfRows=10000&pageNo=" + pageNo
+                    + "&numOfRows=" + pageSize + "&pageNo=" + pageNo
                     + "&MobileOS=ETC&MobileApp=FestivalScope"
                     + "&startYmd=" + from.format(DATE)
                     + "&endYmd=" + to.format(DATE)
@@ -174,15 +182,16 @@ public class RegionalVisitorClient {
                 throw new AnalysisExecutionException("관광수요 방문자 API 응답 본문이 없습니다.");
             }
             total = body.path("totalCount").asInt(0);
-            all.addAll(filtered);
-            if (rawItemCount < 10_000) break;
+            Map<String, List<Raw>> uniquePage = filtered.stream()
+                    .collect(Collectors.groupingBy(r -> r.date + "|" + r.code,
+                            LinkedHashMap::new, Collectors.toList()));
+            List<VisitorRecord> pageRecords = uniquePage.values().stream()
+                    .map(this::select).filter(Objects::nonNull).toList();
+            int totalPages = total == 0 ? page : (int) Math.ceil((double) total / pageSize);
+            pageConsumer.accept(new VisitorPage(pageRecords, page, totalPages, rawItemCount, pageRecords.size()));
+            if (rawItemCount < pageSize) break;
             page++;
         }
-
-        if (all.isEmpty()) return List.of();
-        return all.stream()
-                .collect(Collectors.groupingBy(r -> r.date + "|" + r.code, LinkedHashMap::new, Collectors.toList()))
-                .values().stream().map(this::select).filter(Objects::nonNull).toList();
     }
 
     private VisitorRecord select(List<Raw> rows) {
@@ -269,7 +278,7 @@ public class RegionalVisitorClient {
     private String requestSummary(String region, LocalDate from, LocalDate to, int page) {
         return "endpoint=" + endpoint + ", region=" + region
                 + ", startYmd=" + from.format(DATE) + ", endYmd=" + to.format(DATE)
-                + ", pageNo=" + page + ", numOfRows=10000, responseType=json";
+                + ", pageNo=" + page + ", numOfRows=" + pageSize + ", responseType=json";
     }
 
     private String redactServiceKey(String uri) {
@@ -311,6 +320,7 @@ public class RegionalVisitorClient {
     }
 
     public record VisitorRecord(LocalDate date, String regionCode, String regionName, String sidoName, long visitorCount) {}
+    public record VisitorPage(List<VisitorRecord> records, int page, int totalPages, int fetched, int filtered) {}
     private record ApiResponse(int status, String contentType, String contentLength, String body) {}
     private record Raw(LocalDate date, String code, String name, String sido, String divCode, String divName, long count) {
         VisitorRecord record() { return new VisitorRecord(date, code, name, sido, count); }
