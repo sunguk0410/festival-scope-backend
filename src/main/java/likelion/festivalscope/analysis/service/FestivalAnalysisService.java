@@ -79,6 +79,7 @@ public class FestivalAnalysisService {
     private final TourismLinkageAnalyzer tourismLinkageAnalyzer;
     private final RecommendationService recommendationService;
     private final FestivalAnalysisRecommendationRepository festivalAnalysisRecommendationRepository;
+    private final FestivalAnalysisInterpretationSnapshotRepository festivalAnalysisInterpretationSnapshotRepository;
     private final ResultInterpretationService resultInterpretationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -168,6 +169,7 @@ public class FestivalAnalysisService {
             saveWeatherRiskSnapshot(weatherRiskItem, weatherRiskAnalyzer.analyze(plan));
 
             recommendationService.replaceForAnalysis(analysis);
+            saveInterpretationSnapshots(analysis);
 
             replaceAnalysisStatus(analysis, null, AnalysisStatus.COMPLETED, LocalDateTime.now());
             return analysis.getFestivalAnalysisId();
@@ -269,14 +271,134 @@ public class FestivalAnalysisService {
         };
     }
 
+    private void saveInterpretationSnapshots(FestivalAnalysis analysis) {
+        festivalAnalysisItemRepository
+                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByFestivalAnalysisItemIdAsc(analysis.getFestivalAnalysisId())
+                .forEach(item -> festivalAnalysisInterpretationSnapshotRepository.save(
+                        toInterpretationSnapshot(analysis, item, decisionFor(analysis, item))));
+    }
+
+    private FestivalAnalysisInterpretationSnapshot toInterpretationSnapshot(
+            FestivalAnalysis analysis, FestivalAnalysisItem item, InterpretationDecision decision) {
+        FestivalAnalysisInterpretationSnapshot.FestivalAnalysisInterpretationSnapshotBuilder builder =
+                FestivalAnalysisInterpretationSnapshot.builder()
+                        .festivalAnalysisItem(item)
+                        .status(decision.status())
+                        .summary(decision.interpretation() == null ? "데이터 없음" : decision.interpretation().summary())
+                        .detail(decision.interpretation() == null ? "데이터 없음" : decision.interpretation().detail());
+        switch (item.getItemType()) {
+            case TARGET_VISITOR -> builder.comparisonMedian(metricDecimal(decision, "comparisonMedian"))
+                    .gapRate(metricDecimal(decision, "gapRate"))
+                    .targetRatio(metricDecimal(decision, "targetRatio"));
+            case TREND_FIT -> builder.latestGrowthRate(metricDecimal(decision, "latestGrowthRate"))
+                    .decliningKeywordRate(metricDecimal(decision, "decliningKeywordRate"))
+                    .eventPeriodGap(metricDecimal(decision, "eventPeriodGap"));
+            case DEMAND_FIT -> builder.regionPercentile(metricDecimal(decision, "regionPercentile"))
+                    .monthPercentile(metricDecimal(decision, "monthPercentile"))
+                    .eventMonthRank(metricInteger(decision, "eventMonthRank"))
+                    .currentWeekRank(metricInteger(decision, "currentWeekRank"));
+            case CONFLICT_RISK -> builder.directOverlapCount(metricInteger(decision, "directOverlapCount"))
+                    .nearbyPeriodCount(metricInteger(decision, "nearbyPeriodCount"))
+                    .possibleConflictCount(metricInteger(decision, "possibleConflictCount"))
+                    .historicalEventYears(metricInteger(decision, "historicalEventYears"))
+                    .historyYears(metricInteger(decision, "historyYears"));
+            case WEATHER_RISK -> builder.rainOccurrenceRate(metricDecimal(decision, "rainOccurrenceRate"))
+                    .temperatureType(enumValue(FestivalAnalysisInterpretationSnapshot.TemperatureType.class, metricValue(decision, "temperatureType")))
+                    .temperatureOccurrenceRate(metricDecimal(decision, "temperatureOccurrenceRate"))
+                    .windOccurrenceRate(metricDecimal(decision, "windOccurrenceRate"))
+                    .spaceType(enumValue(VenueType.class, metricValue(decision, "spaceType")))
+                    .highRiskCount(metricInteger(decision, "highRiskCount"))
+                    .moderateRiskCount(metricInteger(decision, "moderateRiskCount"));
+            case TOURISM_LINKAGE -> builder.totalPoiWithin5km(metricInteger(decision, "totalPoiWithin5km"))
+                    .tourismCultureWithin3km(metricInteger(decision, "tourismCultureWithin3km"))
+                    .foodShoppingWithin3km(metricInteger(decision, "foodShoppingWithin3km"))
+                    .accommodationWithin5km(metricInteger(decision, "accommodationWithin5km"))
+                    .highPotentialCount(metricInteger(decision, "highPotentialCount"))
+                    .lowPotentialCount(metricInteger(decision, "lowPotentialCount"));
+        }
+        return builder.build();
+    }
+
+    private InterpretationDecision storedDecisionOrCompute(FestivalAnalysis analysis, FestivalAnalysisItem item) {
+        return festivalAnalysisInterpretationSnapshotRepository
+                .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
+                .map(this::toDecision)
+                .orElseGet(() -> decisionFor(analysis, item));
+    }
+
+    private InterpretationDecision toDecision(FestivalAnalysisInterpretationSnapshot snapshot) {
+        FestivalAnalysisInterpretationSnapshot.TemperatureType temperatureType = snapshot.getTemperatureType();
+        List<InterpretationMetric> metrics = switch (snapshot.getFestivalAnalysisItem().getItemType()) {
+            case TARGET_VISITOR -> List.of(metricEntry("comparisonMedian", snapshot.getComparisonMedian()), metricEntry("gapRate", snapshot.getGapRate()), metricEntry("targetRatio", snapshot.getTargetRatio()));
+            case TREND_FIT -> List.of(metricEntry("latestGrowthRate", snapshot.getLatestGrowthRate()), metricEntry("decliningKeywordRate", snapshot.getDecliningKeywordRate()), metricEntry("eventPeriodGap", snapshot.getEventPeriodGap()));
+            case DEMAND_FIT -> List.of(metricEntry("regionPercentile", snapshot.getRegionPercentile()), metricEntry("monthPercentile", snapshot.getMonthPercentile()), metricEntry("eventMonthRank", snapshot.getEventMonthRank()), metricEntry("currentWeekRank", snapshot.getCurrentWeekRank()));
+            case CONFLICT_RISK -> List.of(metricEntry("directOverlapCount", snapshot.getDirectOverlapCount()), metricEntry("nearbyPeriodCount", snapshot.getNearbyPeriodCount()), metricEntry("possibleConflictCount", snapshot.getPossibleConflictCount()), metricEntry("historicalEventYears", snapshot.getHistoricalEventYears()), metricEntry("historyYears", snapshot.getHistoryYears()));
+            case WEATHER_RISK -> List.of(metricEntry("rainOccurrenceRate", snapshot.getRainOccurrenceRate()), metricEntry("temperatureType", temperatureType), metricEntry("temperatureOccurrenceRate", snapshot.getTemperatureOccurrenceRate()), metricEntry("windOccurrenceRate", snapshot.getWindOccurrenceRate()), metricEntry("spaceType", snapshot.getSpaceType()), metricEntry("highRiskCount", snapshot.getHighRiskCount()), metricEntry("moderateRiskCount", snapshot.getModerateRiskCount()));
+            case TOURISM_LINKAGE -> List.of(metricEntry("totalPoiWithin5km", snapshot.getTotalPoiWithin5km()), metricEntry("tourismCultureWithin3km", snapshot.getTourismCultureWithin3km()), metricEntry("foodShoppingWithin3km", snapshot.getFoodShoppingWithin3km()), metricEntry("accommodationWithin5km", snapshot.getAccommodationWithin5km()), metricEntry("highPotentialCount", snapshot.getHighPotentialCount()), metricEntry("lowPotentialCount", snapshot.getLowPotentialCount()));
+        };
+        return new InterpretationDecision(snapshot.getStatus(), new ResultInterpretation(snapshot.getSummary(), snapshot.getDetail()), metrics);
+    }
+
+    private InterpretationMetric metricEntry(String key, Object value) { return new InterpretationMetric(key, value); }
+
+    private InterpretationDecision decisionFor(FestivalAnalysis analysis, FestivalAnalysisItem item) {
+        return switch (item.getItemType()) {
+            case TARGET_VISITOR -> {
+                FestivalAnalysisTargetVisitor snapshot = festivalAnalysisTargetVisitorRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElseThrow();
+                yield resultInterpretationService.interpretTargetVisitor(analysis.getFestivalPlan(), snapshot.getTargetVisitorCount(),
+                        festivalAnalysisSimilarRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByRankOrderAsc(item.getFestivalAnalysisItemId()));
+            }
+            case TREND_FIT -> {
+                List<FestivalAnalysisTrendKeyword> yearly = trendRows(item, PeriodType.YEARLY);
+                yield resultInterpretationService.interpretTrendFit(analysis, yearly, trendRows(item, PeriodType.MONTHLY));
+            }
+            case DEMAND_FIT -> resultInterpretationService.interpretDemandFit(analysis.getFestivalPlan(), demandResult(item, analysis.getFestivalPlan()));
+            case CONFLICT_RISK -> resultInterpretationService.interpretConflictRisk(conflictSnapshot(item), conflictEvents(item));
+            case WEATHER_RISK -> resultInterpretationService.interpretWeatherRisk(weatherResponse(item));
+            case TOURISM_LINKAGE -> resultInterpretationService.interpretTourismLinkage(tourismSnapshot(item));
+        };
+    }
+
+    private List<FestivalAnalysisTrendKeyword> trendRows(FestivalAnalysisItem item, PeriodType type) {
+        return festivalAnalysisTrendKeywordRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemIdAndPeriodTypeOrderByKeywordAscPeriodYearAscPeriodMonthAsc(item.getFestivalAnalysisItemId(), type);
+    }
+
+    private DemandFitAnalyzer.Result demandResult(FestivalAnalysisItem item, FestivalPlan plan) {
+        return demandFitAnalyzer.fromSnapshots(plan,
+                festivalAnalysisDemandRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()),
+                festivalAnalysisAccessibilityRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElse(null));
+    }
+
+    private FestivalAnalysisConflict conflictSnapshot(FestivalAnalysisItem item) {
+        return festivalAnalysisConflictRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElseThrow();
+    }
+
+    private List<ConflictRiskResponse.Event> conflictEvents(FestivalAnalysisItem item) {
+        return festivalAnalysisConflictEventRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByEventYearAscStartDateAsc(item.getFestivalAnalysisItemId()).stream()
+                .map(e -> new ConflictRiskResponse.Event(e.getFestival() == null ? null : e.getFestival().getFestivalId(), e.getEventName(), e.getEventYear(), e.getSido(), e.getSigungu(), e.getRegionRelation(), e.getStartDate(), e.getEndDate(), e.getEventBasis(), e.getConflictType(), e.getOverlapDays(), e.getSameTheme(), e.getVisitorCount())).toList();
+    }
+
+    private WeatherRiskResponse weatherResponse(FestivalAnalysisItem item) {
+        FestivalAnalysisWeatherRiskSnapshot snapshot = weatherRiskSnapshotRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElseThrow();
+        try { return objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class); }
+        catch (Exception exception) { throw new AnalysisExecutionException("WEATHER_RISK snapshot parsing failed", exception); }
+    }
+
+    private FestivalAnalysisTourismLinkage tourismSnapshot(FestivalAnalysisItem item) {
+        return festivalAnalysisTourismLinkageRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElseThrow();
+    }
+
+    private <E extends Enum<E>> E enumValue(Class<E> type, Object value) {
+        return value == null ? null : Enum.valueOf(type, String.valueOf(value));
+    }
+
     private AnalysisItemSummaryResponse targetVisitorSummary(FestivalAnalysis analysis, FestivalAnalysisItem item) {
         FestivalAnalysisTargetVisitor snapshot = festivalAnalysisTargetVisitorRepository
                 .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
                 .orElseThrow(() -> new AnalysisExecutionException("TARGET_VISITOR snapshot not found: " + analysis.getFestivalAnalysisId()));
         List<FestivalAnalysisSimilar> rows = festivalAnalysisSimilarRepository
                 .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByRankOrderAsc(item.getFestivalAnalysisItemId());
-        InterpretationDecision decision = resultInterpretationService.interpretTargetVisitor(
-                analysis.getFestivalPlan(), snapshot.getTargetVisitorCount(), rows);
+        InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
         BigDecimal target = decimal(snapshot.getTargetVisitorCount());
         BigDecimal median = metricDecimal(decision, "comparisonMedian");
         BigDecimal ratio = metricDecimal(decision, "targetRatio");
@@ -295,7 +417,7 @@ public class FestivalAnalysisService {
         List<FestivalAnalysisTrendKeyword> monthlyRows = festivalAnalysisTrendKeywordRepository
                 .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdAndPeriodTypeOrderByKeywordAscPeriodYearAscPeriodMonthAsc(
                         item.getFestivalAnalysisItemId(), PeriodType.MONTHLY);
-        InterpretationDecision decision = resultInterpretationService.interpretTrendFit(analysis, yearlyRows, monthlyRows);
+        InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
         Map<Integer, List<BigDecimal>> valuesByYear = yearlyRows.stream()
                 .filter(row -> row.getPeriodYear() != null && row.getInterestValue() != null)
                 .collect(Collectors.groupingBy(FestivalAnalysisTrendKeyword::getPeriodYear, TreeMap::new,
@@ -316,7 +438,7 @@ public class FestivalAnalysisService {
         DemandFitAnalyzer.Result result = demandFitAnalyzer.fromSnapshots(analysis.getFestivalPlan(),
                 festivalAnalysisDemandRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()),
                 festivalAnalysisAccessibilityRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElse(null));
-        InterpretationDecision decision = resultInterpretationService.interpretDemandFit(analysis.getFestivalPlan(), result);
+        InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
         DemandFitResponse.SeasonalDemand seasonal = result.seasonalDemand();
         Integer month = seasonal == null ? null : seasonal.eventMonth();
         Integer monthRank = metricInteger(decision, "eventMonthRank");
@@ -339,7 +461,7 @@ public class FestivalAnalysisService {
         List<ConflictRiskResponse.Event> events = festivalAnalysisConflictEventRepository
                 .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByEventYearAscStartDateAsc(item.getFestivalAnalysisItemId()).stream()
                 .map(e -> new ConflictRiskResponse.Event(e.getFestival() == null ? null : e.getFestival().getFestivalId(), e.getEventName(), e.getEventYear(), e.getSido(), e.getSigungu(), e.getRegionRelation(), e.getStartDate(), e.getEndDate(), e.getEventBasis(), e.getConflictType(), e.getOverlapDays(), e.getSameTheme(), e.getVisitorCount())).toList();
-        InterpretationDecision decision = resultInterpretationService.interpretConflictRisk(snapshot, events);
+        InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
         return summary(item, "행사 일정 중복 위험", decision,
                 primary(formatCount(metricInteger(decision, "possibleConflictCount")), "중복 가능 행사"),
                 metrics(metric("동일 날짜", formatCount(metricInteger(decision, "directOverlapCount"))),
@@ -352,7 +474,7 @@ public class FestivalAnalysisService {
                 .orElseThrow(() -> new AnalysisExecutionException("WEATHER_RISK snapshot not found: " + analysis.getFestivalAnalysisId()));
         try {
             WeatherRiskResponse response = objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
-            InterpretationDecision decision = resultInterpretationService.interpretWeatherRisk(response);
+            InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
             BigDecimal rain = metricDecimal(decision, "rainOccurrenceRate");
             BigDecimal temperature = metricDecimal(decision, "temperatureOccurrenceRate");
             BigDecimal wind = metricDecimal(decision, "windOccurrenceRate");
@@ -383,7 +505,7 @@ public class FestivalAnalysisService {
         FestivalAnalysisTourismLinkage snapshot = festivalAnalysisTourismLinkageRepository
                 .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
                 .orElseThrow(() -> new AnalysisExecutionException("TOURISM_LINKAGE snapshot not found: " + analysis.getFestivalAnalysisId()));
-        InterpretationDecision decision = resultInterpretationService.interpretTourismLinkage(snapshot);
+        InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
         return summary(item, "주변 관광 연계", decision,
                 primary(formatPoi(metricInteger(decision, "totalPoiWithin5km")), "반경 5km 연계 가능 자원"),
                 metrics(metric("관광·문화", formatPoi(metricInteger(decision, "tourismCultureWithin3km"))),
