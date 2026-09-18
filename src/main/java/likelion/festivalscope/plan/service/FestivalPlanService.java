@@ -15,6 +15,8 @@ import likelion.festivalscope.plan.repository.FestivalPlanRepository;
 import likelion.festivalscope.plan.repository.FestivalPlanThemeRepository;
 import likelion.festivalscope.user.entity.User;
 import likelion.festivalscope.user.repository.UserRepository;
+import likelion.festivalscope.trend.dto.TrendKeywordResponse;
+import likelion.festivalscope.trend.service.TrendKeywordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,7 @@ public class FestivalPlanService {
     private final FestivalPlanThemeRepository festivalPlanThemeRepository;
     private final FestivalPlanProgramRepository festivalPlanProgramRepository;
     private final FestivalThemeRepository festivalThemeRepository;
+    private final TrendKeywordService trendKeywordService;
 
     @Transactional
     public FestivalPlanCreateResponse create(FestivalPlanCreateRequest request) {
@@ -89,6 +92,24 @@ public class FestivalPlanService {
                 plan.getVenueAddress(),
                 plan.getLatitude(),
                 plan.getLongitude());
+    }
+
+    @Transactional(readOnly = true)
+    public TrendKeywordResponse generateTrendKeywords(Long planId) {
+        FestivalPlan plan = festivalPlanRepository.findById(planId)
+                .orElseThrow(() -> new ResourceNotFoundException("Festival plan not found: " + planId));
+        verifyOwner(plan.getUser().getUserId());
+        List<String> programNames = festivalPlanProgramRepository.findAllByFestivalPlan_FestivalPlanId(planId)
+                .stream().map(FestivalPlanProgram::getProgramName).toList();
+        return new TrendKeywordResponse(plan.getFestivalName(), programNames,
+                trendKeywordService.extractKeywords(plan.getFestivalName(), programNames));
+    }
+
+    private void verifyOwner(Long ownerId) {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (!(principal instanceof Long userId)) throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED);
+        if (!userId.equals(ownerId)) throw new BusinessException(ErrorCode.AUTH_FORBIDDEN);
     }
 
     private Integer calculateDurationDays(FestivalPlanCreateRequest request) {

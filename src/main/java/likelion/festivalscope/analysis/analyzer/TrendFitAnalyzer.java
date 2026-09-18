@@ -5,12 +5,12 @@ import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.plan.entity.FestivalPlan;
 import likelion.festivalscope.plan.entity.FestivalPlanProgram;
 import likelion.festivalscope.plan.repository.FestivalPlanProgramRepository;
+import likelion.festivalscope.trend.service.TrendKeywordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.Year;
 import java.time.YearMonth;
@@ -21,13 +21,14 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 public class TrendFitAnalyzer {
     private final FestivalPlanProgramRepository festivalPlanProgramRepository;
-    private final TrendKeywordProvider trendKeywordProvider;
+    private final TrendKeywordService trendKeywordService;
     private final NaverDataLabClient naverDataLabClient;
 
     public TrendAnalysisResult analyze(FestivalPlan plan) {
         List<FestivalPlanProgram> programs = festivalPlanProgramRepository
                 .findAllByFestivalPlan_FestivalPlanId(plan.getFestivalPlanId());
-        List<String> keywords = mergeKeywords(programs, trendKeywordProvider.provide(plan, programs));
+        List<String> programNames = programs.stream().map(FestivalPlanProgram::getProgramName).toList();
+        List<String> keywords = trendKeywordService.extractKeywords(plan.getFestivalName(), programNames);
         if (keywords.isEmpty()) {
             throw new AnalysisExecutionException("TREND_FIT 분석에 사용할 키워드가 없습니다.");
         }
@@ -119,19 +120,6 @@ public class TrendFitAnalyzer {
         return dataByKeyword.getOrDefault(keyword,
                 dataByKeyword.getOrDefault(keyword.toLowerCase(Locale.ROOT), List.of()));
     }
-    private List<String> mergeKeywords(List<FestivalPlanProgram> programs, List<String> aiKeywords) {
-        LinkedHashMap<String, String> normalized = new LinkedHashMap<>();
-        programs.stream().map(FestivalPlanProgram::getProgramName).forEach(keyword -> addKeyword(normalized, keyword));
-        aiKeywords.forEach(keyword -> addKeyword(normalized, keyword));
-        return new ArrayList<>(normalized.values());
-    }
-
-    private void addKeyword(Map<String, String> normalized, String keyword) {
-        if (keyword == null || keyword.isBlank()) return;
-        String value = Normalizer.normalize(keyword, Normalizer.Form.NFC).trim().replaceAll("\\s+", " ");
-        normalized.putIfAbsent(value.toLowerCase(Locale.ROOT), value);
-    }
-
     private Optional<Period> createPreviousYearEventPeriod(LocalDate startDate) {
         if (startDate == null) return Optional.empty();
         YearMonth eventMonth = YearMonth.from(startDate).minusYears(1);
