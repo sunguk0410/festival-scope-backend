@@ -7,7 +7,8 @@ import java.util.List;
 public record DemandFitResponse(AnalysisItemType itemType, BigDecimal score,
                                 RegionalDemand regionalDemand, SeasonalDemand seasonalDemand,
                                 Accessibility accessibility,
-                                List<RecommendationResponse> recommendations) {
+                                List<RecommendationResponse> recommendations,
+                                ResultInterpretation resultInterpretation) {
     public record RegionalDemand(String sido, String region, Long visitorCount, BigDecimal comparisonAverage,
                                  BigDecimal comparisonMedian, Integer rank, Integer totalRegions,
                                  BigDecimal percentile, List<ComparisonRegion> comparisonRegions) {}

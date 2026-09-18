@@ -12,7 +12,8 @@ public record TrendFitResponse(
         @Schema(description = "모든 키워드의 통합 연도별 검색 관심도와 증감률") IntegratedTrend integratedTrend,
         @Schema(description = "키워드별 연도별 검색 관심도와 증감률") List<KeywordTrend> keywords,
         @Schema(description = "개최 예정 시기 기준 전년도 ±3개월 검색 관심도") List<PreviousYearAroundEventPeriod> previousYearAroundEventPeriod,
-        List<RecommendationResponse> recommendations
+        List<RecommendationResponse> recommendations,
+        ResultInterpretation resultInterpretation
 ) {
     public record IntegratedTrend(
             @Schema(description = "연도별 검색 관심도. 해당 연도의 월별 ratio 평균") List<YearlyInterest> yearlyInterest,

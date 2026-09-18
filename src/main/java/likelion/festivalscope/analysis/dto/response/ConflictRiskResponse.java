@@ -6,7 +6,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record ConflictRiskResponse(AnalysisItemType itemType, BigDecimal score, ConflictRisk conflictRisk,
-                                   List<RecommendationResponse> recommendations) {
+                                   List<RecommendationResponse> recommendations,
+                                   ResultInterpretation resultInterpretation) {
     public record ConflictRisk(TargetPeriod targetPeriod, HistoryPeriod historyPeriod,
                                Integer directOverlapCount, Integer nearbyPeriodCount,
                                Integer historicalSamePeriodCount, Integer sameRegionCount,

@@ -5,7 +5,8 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public record TourismLinkageResponse(AnalysisItemType itemType, BigDecimal score, TourismLinkage tourismLinkage,
-                                     List<RecommendationResponse> recommendations) {
+                                     List<RecommendationResponse> recommendations,
+                                     ResultInterpretation resultInterpretation) {
     public record TourismLinkage(Integer totalCandidatePoiCount, Integer tourismCultureCount,
                                  Integer foodShoppingCount, Integer accommodationCount,
                                  String tourismLinkageSummary, String consumptionLinkageSummary,

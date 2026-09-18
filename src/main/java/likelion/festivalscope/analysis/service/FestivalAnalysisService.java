@@ -15,6 +15,7 @@ import likelion.festivalscope.analysis.dto.response.TourismLinkageResponse;
 import likelion.festivalscope.analysis.dto.response.FestivalAnalysisResponse;
 import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
+import likelion.festivalscope.analysis.dto.response.ResultInterpretation;
 import likelion.festivalscope.analysis.entity.*;
 import likelion.festivalscope.plan.entity.*;
 import likelion.festivalscope.festival.entity.*;
@@ -71,6 +72,7 @@ public class FestivalAnalysisService {
     private final TourismLinkageAnalyzer tourismLinkageAnalyzer;
     private final RecommendationService recommendationService;
     private final FestivalAnalysisRecommendationRepository festivalAnalysisRecommendationRepository;
+    private final ResultInterpretationService resultInterpretationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(readOnly = true)
@@ -87,7 +89,7 @@ public class FestivalAnalysisService {
     @Transactional(noRollbackFor = AnalysisExecutionException.class)
     public Long execute(Long planId) {
         FestivalPlan plan = festivalPlanRepository.findById(planId)
-                .orElseThrow(() -> new ResourceNotFoundException("湲고쉷?덉쓣 李얠쓣 ???놁뒿?덈떎: " + planId));
+                .orElseThrow(() -> new ResourceNotFoundException("축제 기획안을 찾을 수 없습니다: " + planId));
         verifyOwner(plan.getUser().getUserId());
         LocalDateTime startedAt = LocalDateTime.now();
         FestivalAnalysis analysis = festivalAnalysisRepository.save(FestivalAnalysis.builder()
@@ -170,7 +172,7 @@ public class FestivalAnalysisService {
             if (exception instanceof AnalysisExecutionException analysisException) {
                 throw analysisException;
             }
-            throw new AnalysisExecutionException("異뺤젣 遺꾩꽍 ?ㅽ뻾???ㅽ뙣?덉뒿?덈떎.", exception);
+            throw new AnalysisExecutionException("축제 분석 실행에 실패했습니다.", exception);
         }
     }
 
@@ -206,7 +208,7 @@ public class FestivalAnalysisService {
                 snapshot.getStayLinkageSummary(), poiSummary, indicators, culture.stream().limit(5).toList(),
                 commerce.stream().limit(5).toList(), accommodation.stream().limit(5).toList(),
                 groups(culture), groups(commerce), groups(accommodation)),
-                recommendationsForItem(item));
+                recommendationsForItem(item), resultInterpretationService.interpretTourismLinkage(snapshot));
     }
 
     private TourismLinkageResponse.RangeCount rangeCount(List<TourismLinkageResponse.Poi> culture, List<TourismLinkageResponse.Poi> commerce, List<TourismLinkageResponse.Poi> accommodation, PoiDistanceRange range) {
@@ -278,7 +280,7 @@ public class FestivalAnalysisService {
         FestivalAnalysis analysis = getAnalysisEntity(analysisId);
         FestivalAnalysisItem item = festivalAnalysisItemRepository
                 .findByFestivalAnalysis_FestivalAnalysisIdAndItemType(analysisId, AnalysisItemType.TARGET_VISITOR)
-                .orElseThrow(() -> new ResourceNotFoundException("TARGET_VISITOR ??ぉ??李얠쓣 ???놁뒿?덈떎: " + analysisId));
+                .orElseThrow(() -> new ResourceNotFoundException("TARGET_VISITOR 분석 항목을 찾을 수 없습니다: " + analysisId));
         FestivalAnalysisTargetVisitor snapshot = festivalAnalysisTargetVisitorRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
                 .orElseThrow(() -> new AnalysisExecutionException("TARGET_VISITOR snapshot not found: " + analysisId));
         List<FestivalAnalysisSimilar> savedSimilar = festivalAnalysisSimilarRepository
@@ -302,7 +304,8 @@ public class FestivalAnalysisService {
                 snapshot.getTargetVisitorCount(), snapshot.getSimilarFestivalCount(), snapshot.getVisitorDataCount(),
                 snapshot.getVisitorAverage(), snapshot.getVisitorMedian(), snapshot.getVisitorMin(), snapshot.getVisitorMax(),
                 snapshot.getGapRate(), snapshot.getSimilarityThreshold(), sameFestivalResponses, similarResponses),
-                recommendationsForItem(item));
+                recommendationsForItem(item), resultInterpretationService.interpretTargetVisitor(
+                        analysis.getFestivalPlan(), snapshot.getTargetVisitorCount(), savedSimilar));
     }
 
     private TargetVisitorResponse.SimilarFestival toSimilarFestivalResponse(FestivalAnalysisSimilar similar, int rank) {
@@ -344,7 +347,12 @@ public class FestivalAnalysisService {
                 festivalAnalysisDemandRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()),
                 festivalAnalysisAccessibilityRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElse(null));
         return new DemandFitResponse(item.getItemType(), item.getScore(), result.regionalDemand(), result.seasonalDemand(), result.accessibility(),
-                recommendationsForItem(item));
+                recommendationsForItem(item), resultInterpretationService.interpretDemandFit(
+                        analysis.getFestivalPlan(), result));
+    }
+
+    private String valueOrUnavailable(Object value) {
+        return value == null ? "확인되지 않음" : String.valueOf(value);
     }
 
     @Transactional(readOnly = true)
@@ -359,7 +367,7 @@ public class FestivalAnalysisService {
             WeatherRiskResponse response = objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
             return new WeatherRiskResponse(response.itemType(), response.score(), response.station(), response.analysisPeriod(),
                     response.rain(), response.temperature(), response.wind(), response.festivalCondition(),
-                    recommendationsForItem(item));
+                    recommendationsForItem(item), resultInterpretationService.interpretWeatherRisk(response));
         } catch (Exception exception) {
             throw new AnalysisExecutionException("WEATHER_RISK snapshot parsing failed: " + analysisId, exception);
         }
@@ -379,7 +387,8 @@ public class FestivalAnalysisService {
                 new ConflictRiskResponse.TargetPeriod(snapshot.getTargetStartDate(), snapshot.getTargetEndDate()),
                 new ConflictRiskResponse.HistoryPeriod(snapshot.getHistoryStartYear(), snapshot.getHistoryEndYear()),
                 snapshot.getDirectOverlapCount(), snapshot.getNearbyPeriodCount(), snapshot.getHistoricalSamePeriodCount(),
-                snapshot.getSameRegionCount(), events), recommendationsForItem(item));
+                snapshot.getSameRegionCount(), events), recommendationsForItem(item),
+                resultInterpretationService.interpretConflictRisk(snapshot, events));
     }
 
     private void saveConflictSnapshot(FestivalAnalysisItem item, FestivalPlan plan, likelion.festivalscope.analysis.conflict.ScheduleConflictAnalyzer.Result result) {
@@ -515,7 +524,7 @@ public class FestivalAnalysisService {
     }
     private FestivalAnalysis getAnalysisEntity(Long analysisId) {
         return festivalAnalysisRepository.findById(analysisId)
-                .orElseThrow(() -> new ResourceNotFoundException("遺꾩꽍??李얠쓣 ???놁뒿?덈떎: " + analysisId));
+                .orElseThrow(() -> new ResourceNotFoundException("분석 결과를 찾을 수 없습니다: " + analysisId));
     }
 
     public void verifyAnalysisOwner(Long analysisId) {
@@ -567,7 +576,8 @@ public class FestivalAnalysisService {
         return new TrendFitResponse(
                 item.getItemType(), item.getScore(),
                 new TrendFitResponse.IntegratedTrend(integratedInterest, integratedGrowth),
-                keywordTrends, aroundEvent, recommendationsForItem(item));
+                keywordTrends, aroundEvent, recommendationsForItem(item),
+                resultInterpretationService.interpretTrendFit(analysis, yearlyRows, monthlyRows));
     }
 
     private void saveTrendKeywords(FestivalAnalysisItem item, TrendAnalysisResult result) {
@@ -666,7 +676,7 @@ public class FestivalAnalysisService {
     }
 
     private BigDecimal calculateMedian(List<Long> sortedValues) {
-        if (sortedValues.isEmpty()) throw new AnalysisExecutionException("?좎궗 異뺤젣 諛⑸Ц媛??곗씠?곌? ?놁뒿?덈떎.");
+        if (sortedValues.isEmpty()) throw new AnalysisExecutionException("유사 축제 방문객 데이터가 없습니다.");
         int middle = sortedValues.size() / 2;
         if (sortedValues.size() % 2 == 1) return BigDecimal.valueOf(sortedValues.get(middle));
         return BigDecimal.valueOf(sortedValues.get(middle - 1))
