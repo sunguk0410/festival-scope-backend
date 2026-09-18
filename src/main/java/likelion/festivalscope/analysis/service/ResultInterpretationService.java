@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class ResultInterpretationService {
-    public ResultInterpretation interpretTourismLinkage(FestivalAnalysisTourismLinkage snapshot) {
+    public InterpretationDecision interpretTourismLinkage(FestivalAnalysisTourismLinkage snapshot) {
         Integer tourismCount = snapshot.getTourismCultureWithin3kmCount();
         Integer foodShoppingCount = snapshot.getFoodShoppingWithin3kmCount();
         Integer accommodationCount = snapshot.getAccommodationWithin5kmCount();
@@ -49,9 +49,11 @@ public class ResultInterpretationService {
             if (accommodationCount == 0) lowPotentialCount++;
         }
         if (knownCategories < 3) {
-            return new ResultInterpretation(
+            return decision("데이터 부족", new ResultInterpretation(
                     "주변 관광 연계 잠재력을 판단하기 위한 POI 집계가 일부 부족합니다.",
-                    joinTourismSentences(tourismSentence, consumptionSentence, staySentence, distance.sentence()));
+                    joinTourismSentences(tourismSentence, consumptionSentence, staySentence, distance.sentence())),
+                    List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin3km", tourismCount),
+                            metric("foodShoppingWithin3km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount)));
         }
 
         String summary;
@@ -73,7 +75,27 @@ public class ResultInterpretationService {
             conclusion = "행사장 주변에서 활용할 수 있는 관광·소비·체류 자원이 전반적으로 부족해, 현재 입지에서는 축제 방문을 주변 관광 활동으로 자연스럽게 확장하기 어려운 구조입니다.";
         }
         String detail = joinTourismSentences(tourismSentence, consumptionSentence, staySentence, distance.sentence());
-        return new ResultInterpretation(summary, (detail + " " + conclusion).trim());
+        return decision(tourismStatus(highPotentialCount, lowPotentialCount),
+                new ResultInterpretation(summary, (detail + " " + conclusion).trim()),
+                List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin3km", tourismCount),
+                        metric("foodShoppingWithin3km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount),
+                        metric("highPotentialCount", highPotentialCount), metric("lowPotentialCount", lowPotentialCount)));
+    }
+
+    private String tourismStatus(int high, int low) {
+        if (high >= 2) return "연계 잠재력 높음";
+        if (high == 1 && low == 0) return "보통";
+        if (high == 0 && low == 0) return "보통";
+        return "취약";
+    }
+
+    private InterpretationMetric metric(String key, Object value) {
+        return new InterpretationMetric(key, value);
+    }
+
+    private InterpretationDecision decision(String status, ResultInterpretation interpretation,
+                                            List<InterpretationMetric> metrics) {
+        return new InterpretationDecision(status, interpretation, metrics);
     }
 
     private String tourismSentence(Integer count) {
@@ -115,39 +137,53 @@ public class ResultInterpretationService {
 
     private record DistanceInterpretation(String sentence) {}
 
-    public ResultInterpretation interpretTargetVisitor(
+    public InterpretationDecision interpretTargetVisitor(
             FestivalPlan plan, Long targetVisitorCount, List<FestivalAnalysisSimilar> rows) {
         if (targetVisitorCount == null || targetVisitorCount <= 0) {
-            return fallbackInterpretation("목표 방문객 수와 비교 기준을 확인할 수 없어 결과를 해석하기 어렵습니다.");
+            return decision("데이터 부족", fallbackInterpretation("목표 방문객 수와 비교 기준을 확인할 수 없어 결과를 해석하기 어렵습니다."), List.of());
         }
 
         BigDecimal target = BigDecimal.valueOf(targetVisitorCount);
         BigDecimal similarMedian = medianForInterpretation(rows, TargetVisitorComparisonType.SIMILAR_FESTIVAL);
         if (plan.getFestivalStatus() == FestivalStatus.NEW) {
             if (!validMedian(similarMedian)) {
-                return fallbackInterpretation("유사 축제 방문객 비교 기준이 없어 목표 방문객 규모를 해석하기 어렵습니다.");
+                return decision("데이터 부족", fallbackInterpretation("유사 축제 방문객 비교 기준이 없어 목표 방문객 규모를 해석하기 어렵습니다."), List.of());
             }
             BigDecimal gap = interpretationGap(target, similarMedian);
-            return new ResultInterpretation(
+            return decision(targetStatus(gap), new ResultInterpretation(
                     newSummaryForNew(gap),
-                    newDetailForNew(target, similarMedian, gap));
+                    newDetailForNew(target, similarMedian, gap)), targetMetrics(target, similarMedian, gap));
         }
 
         if (plan.getFestivalStatus() != FestivalStatus.EXISTING) {
-            return fallbackInterpretation("축제 유형을 확인할 수 없어 목표 방문객 규모를 해석하기 어렵습니다.");
+            return decision("데이터 부족", fallbackInterpretation("축제 유형을 확인할 수 없어 목표 방문객 규모를 해석하기 어렵습니다."), List.of());
         }
 
         BigDecimal historyMedian = medianForInterpretation(rows, TargetVisitorComparisonType.SAME_FESTIVAL);
         if (!validMedian(historyMedian)) {
-            return fallbackInterpretation("해당 축제의 과거 방문 이력이 없어 목표 방문객 규모를 해석하기 어렵습니다.");
+            return decision("데이터 부족", fallbackInterpretation("해당 축제의 과거 방문 이력이 없어 목표 방문객 규모를 해석하기 어렵습니다."), List.of());
         }
 
         BigDecimal historyGap = interpretationGap(target, historyMedian);
         BigDecimal similarGap = validMedian(similarMedian) ? interpretationGap(target, similarMedian) : null;
         String trendSentence = historyTrendSentence(rows);
-        return new ResultInterpretation(
+        return decision(targetStatus(historyGap), new ResultInterpretation(
                 summaryForExisting(historyGap),
-                detailForExisting(target, historyMedian, historyGap, similarMedian, similarGap, trendSentence));
+                detailForExisting(target, historyMedian, historyGap, similarMedian, similarGap, trendSentence)),
+                targetMetrics(target, historyMedian, historyGap));
+    }
+
+    private List<InterpretationMetric> targetMetrics(BigDecimal target, BigDecimal median, BigDecimal gap) {
+        return List.of(metric("comparisonMedian", median), metric("gapRate", gap),
+                metric("targetRatio", target.divide(median, 6, RoundingMode.HALF_UP)));
+    }
+
+    private String targetStatus(BigDecimal gap) {
+        if (gap.compareTo(BigDecimal.valueOf(50)) >= 0) return "과다 설정";
+        if (gap.compareTo(BigDecimal.valueOf(20)) >= 0) return "다소 높음";
+        if (gap.compareTo(BigDecimal.valueOf(-20)) >= 0) return "적정";
+        if (gap.compareTo(BigDecimal.valueOf(-50)) >= 0) return "다소 낮음";
+        return "보수적 설정";
     }
 
     private ResultInterpretation fallbackInterpretation(String detail) {
@@ -261,15 +297,15 @@ public class ResultInterpretationService {
         return value.stripTrailingZeros().toPlainString();
     }
 
-    public ResultInterpretation interpretDemandFit(
+    public InterpretationDecision interpretDemandFit(
             FestivalPlan plan, DemandFitAnalyzer.Result result) {
         DemandFitResponse.RegionalDemand regional = result.regionalDemand();
         DemandFitResponse.SeasonalDemand seasonal = result.seasonalDemand();
         if (regional == null || regional.percentile() == null
                 || seasonal == null || seasonal.eventMonthPercentile() == null) {
-            return new ResultInterpretation(
+            return decision("데이터 부족", new ResultInterpretation(
                     "지역 또는 개최 시기 관광수요를 해석하기 위한 데이터가 부족합니다.",
-                    "지역 관광수요와 개최월 관광수요 백분위가 모두 확보되지 않아 현재 개최 조건을 종합적으로 해석하기 어렵습니다.");
+                    "지역 관광수요와 개최월 관광수요 백분위가 모두 확보되지 않아 현재 개최 조건을 종합적으로 해석하기 어렵습니다."), List.of());
         }
 
         BigDecimal regionPercentile = regional.percentile();
@@ -281,7 +317,29 @@ public class ResultInterpretationService {
         String summary = demandSummary(regionPercentile, monthPercentile);
         String detail = String.join(" ", List.of(regionSentence, monthSentence, weekSentence, accessibilitySentence))
                 + " " + demandConclusion(regionPercentile, monthPercentile);
-        return new ResultInterpretation(summary, detail.trim());
+        return decision(demandStatus(regionPercentile, monthPercentile), new ResultInterpretation(summary, detail.trim()),
+                List.of(metric("regionPercentile", regionPercentile), metric("monthPercentile", monthPercentile),
+                        metric("eventMonthRank", seasonal.eventMonthRank()), metric("currentWeekRank", currentWeekRank(plan, seasonal))));
+    }
+
+    private String demandStatus(BigDecimal region, BigDecimal month) {
+        boolean highRegion = region.compareTo(BigDecimal.valueOf(75)) >= 0;
+        boolean mediumRegion = region.compareTo(BigDecimal.valueOf(40)) >= 0;
+        boolean highMonth = month.compareTo(BigDecimal.valueOf(75)) >= 0;
+        boolean mediumMonth = month.compareTo(BigDecimal.valueOf(40)) >= 0;
+        if (highRegion && highMonth) return "수요 우수";
+        if (!highRegion && highMonth) return "시기 강점";
+        if (highRegion && mediumMonth) return "지역 강점";
+        if (mediumRegion && mediumMonth) return "보통";
+        if (highRegion) return "지역 강점";
+        return "수요 취약";
+    }
+
+    private Integer currentWeekRank(FestivalPlan plan, DemandFitResponse.SeasonalDemand seasonal) {
+        if (plan.getStartDate() == null || seasonal.weeklyDemand() == null) return null;
+        int week = (plan.getStartDate().getDayOfMonth() - 1) / 7 + 1;
+        return seasonal.weeklyDemand().stream().filter(item -> item.week() == week)
+                .map(DemandFitResponse.WeeklyDemand::rank).findFirst().orElse(null);
     }
 
     private String demandRegionSentence(BigDecimal percentile) {
@@ -390,11 +448,11 @@ public class ResultInterpretationService {
         return "지역 자체의 관광객 유입 기반과 개최 시기의 기존 관광수요가 모두 약해, 현재 조건에서는 축제 자체가 새로운 방문 동기를 만들어내는 역할이 특히 중요합니다.";
     }
 
-    public ResultInterpretation interpretWeatherRisk(WeatherRiskResponse response) {
+    public InterpretationDecision interpretWeatherRisk(WeatherRiskResponse response) {
         if (response.analysisPeriod() == null || response.rain() == null
                 || response.temperature() == null || response.wind() == null) {
-            return new ResultInterpretation("과거 동일 시기 기상 이력을 해석하기 위한 데이터가 부족합니다.",
-                    "강수, 온도 또는 강풍의 과거 동일 시기 관측값이 충분하지 않아 기상 리스크를 종합적으로 해석하기 어렵습니다.");
+            return decision("데이터 부족", new ResultInterpretation("과거 동일 시기 기상 이력을 해석하기 위한 데이터가 부족합니다.",
+                    "강수, 온도 또는 강풍의 과거 동일 시기 관측값이 충분하지 않아 기상 리스크를 종합적으로 해석하기 어렵습니다."), List.of());
         }
 
         int actualYears = response.analysisPeriod().actualYears();
@@ -410,13 +468,30 @@ public class ResultInterpretationService {
         VenueType spaceType = response.festivalCondition() == null ? null : response.festivalCondition().spaceType();
 
         if (spaceType == null) {
-            return new ResultInterpretation("과거 기상 이력은 확인되지만 행사 공간 유형이 없어 영향을 종합하기 어렵습니다.",
-                    joinWeatherSentences(rainSentence, temperatureSentence, windSentence));
+            return decision("기상 영향 제한", new ResultInterpretation("과거 기상 이력은 확인되지만 행사 공간 유형이 없어 영향을 종합하기 어렵습니다.",
+                    joinWeatherSentences(rainSentence, temperatureSentence, windSentence)),
+                    weatherMetrics(response, temperatureRisk, highRiskCount, moderateRiskCount, spaceType));
         }
         String summary = weatherSummary(highRiskCount, moderateRiskCount, spaceType);
         String conclusion = weatherConclusion(highRiskCount, spaceType);
         String detail = joinWeatherSentences(rainSentence, temperatureSentence, windSentence, spaceSentence, conclusion);
-        return new ResultInterpretation(summary, detail);
+        return decision(weatherStatus(spaceType, highRiskCount, moderateRiskCount), new ResultInterpretation(summary, detail),
+                weatherMetrics(response, temperatureRisk, highRiskCount, moderateRiskCount, spaceType));
+    }
+
+    private List<InterpretationMetric> weatherMetrics(WeatherRiskResponse response, TemperatureRisk temperatureRisk,
+                                                      int highRiskCount, int moderateRiskCount, VenueType spaceType) {
+        return List.of(metric("rainOccurrenceRate", response.rain().occurrenceRate()),
+                metric("temperatureType", temperatureRisk.type()), metric("temperatureOccurrenceRate", temperatureRisk.rate()),
+                metric("windOccurrenceRate", response.wind().strongWindOccurrenceRate()), metric("spaceType", spaceType),
+                metric("highRiskCount", highRiskCount), metric("moderateRiskCount", moderateRiskCount));
+    }
+
+    private String weatherStatus(VenueType spaceType, int high, int moderate) {
+        if (spaceType == VenueType.INDOOR) return "기상 영향 제한";
+        if (spaceType == VenueType.OUTDOOR && high >= 2) return "기상 리스크 높음";
+        if (high >= 1 || moderate >= 2) return "기상 주의";
+        return "기상 리스크 낮음";
     }
 
     private String weatherRainSentence(WeatherRiskResponse.Rain rain, int actualYears) {
@@ -526,14 +601,14 @@ public class ResultInterpretationService {
     private enum TemperatureType { HOT, COLD, NEUTRAL }
     private record TemperatureRisk(BigDecimal rate, TemperatureType type) {}
 
-    public ResultInterpretation interpretConflictRisk(
+    public InterpretationDecision interpretConflictRisk(
             FestivalAnalysisConflict snapshot, List<ConflictRiskResponse.Event> events) {
         Integer directCount = snapshot.getDirectOverlapCount();
         Integer nearbyCount = snapshot.getNearbyPeriodCount();
         if (directCount == null || nearbyCount == null) {
-            return new ResultInterpretation(
+            return decision("데이터 부족", new ResultInterpretation(
                     "과거 행사 이력을 해석하기 위한 데이터가 부족합니다.",
-                    "과거 동일 날짜 또는 인접 시기 행사 수가 확인되지 않아 일정 집중 패턴을 해석하기 어렵습니다.");
+                    "과거 동일 날짜 또는 인접 시기 행사 수가 확인되지 않아 일정 집중 패턴을 해석하기 어렵습니다."), List.of());
         }
 
         Integer historyYears = historyYears(snapshot.getHistoryStartYear(), snapshot.getHistoryEndYear());
@@ -550,7 +625,19 @@ public class ResultInterpretationService {
         String detail = String.join(" ", List.of(directSentence, nearbySentence, historicalSentence,
                         regionSentence, themeSentence))
                 + " " + conflictConclusion(directCount, nearbyCount, historicalRate);
-        return new ResultInterpretation(summary, detail.trim());
+        String status = conflictStatus(directCount, nearbyCount, historicalRate);
+        return decision(status, new ResultInterpretation(summary, detail.trim()),
+                List.of(metric("directOverlapCount", directCount), metric("nearbyPeriodCount", nearbyCount),
+                        metric("possibleConflictCount", directCount + nearbyCount), metric("historicalEventYears", historicalEventYears),
+                        metric("historyYears", historyYears)));
+    }
+
+    private String conflictStatus(int direct, int nearby, BigDecimal historicalRate) {
+        if (direct >= 2) return "중복 리스크 높음";
+        if (direct == 1 || nearby >= 3 || (historicalRate != null && historicalRate.compareTo(BigDecimal.valueOf(60)) >= 0)) {
+            return "중복 주의";
+        }
+        return "중복 리스크 낮음";
     }
 
     private Integer historyYears(Integer startYear, Integer endYear) {
@@ -633,7 +720,7 @@ public class ResultInterpretationService {
         return "현재 분석된 과거 이력에서는 동일 날짜나 인접 시기에 주변 행사가 집중된 패턴이 뚜렷하게 나타나지 않았습니다.";
     }
 
-    public ResultInterpretation interpretTrendFit(
+    public InterpretationDecision interpretTrendFit(
             FestivalAnalysis analysis,
             List<FestivalAnalysisTrendKeyword> yearlyRows,
             List<FestivalAnalysisTrendKeyword> monthlyRows) {
@@ -642,9 +729,9 @@ public class ResultInterpretationService {
         BigDecimal eventPeriodGap = eventPeriodGap(analysis, monthlyRows);
 
         if (latestIntegratedGrowth == null) {
-            return new ResultInterpretation(
+            return decision("데이터 부족", new ResultInterpretation(
                     "통합 검색 관심도 증감률을 확인할 수 없습니다.",
-                    "최근 연도 간 통합 검색 관심도 증감률 데이터가 없어 전체 관심 흐름을 해석하기 어렵습니다.");
+                    "최근 연도 간 통합 검색 관심도 증감률 데이터가 없어 전체 관심 흐름을 해석하기 어렵습니다."), List.of());
         }
 
         int keywordCount = keywordGrowths.size();
@@ -661,7 +748,17 @@ public class ResultInterpretationService {
         String summary = trendSummary(latestIntegratedGrowth, decliningRate);
         String detail = trendDetail(latestIntegratedGrowth, keywordCount, decliningKeywordCount,
                 decliningRate, decliningKeywords, eventPeriodSentence);
-        return new ResultInterpretation(summary, detail);
+        return decision(trendStatus(latestIntegratedGrowth), new ResultInterpretation(summary, detail),
+                List.of(metric("latestGrowthRate", latestIntegratedGrowth), metric("decliningKeywordRate", decliningRate),
+                        metric("eventPeriodGap", eventPeriodGap)));
+    }
+
+    private String trendStatus(BigDecimal trend) {
+        if (trend.compareTo(BigDecimal.valueOf(20)) >= 0) return "관심 급상승";
+        if (trend.compareTo(BigDecimal.valueOf(5)) >= 0) return "관심 상승";
+        if (trend.compareTo(BigDecimal.valueOf(-5)) > 0) return "관심 유지";
+        if (trend.compareTo(BigDecimal.valueOf(-20)) > 0) return "관심 하락";
+        return "관심 급감";
     }
 
     private BigDecimal latestIntegratedGrowth(List<FestivalAnalysisTrendKeyword> yearlyRows) {
