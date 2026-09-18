@@ -2,7 +2,7 @@ package likelion.festivalscope.plan.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import likelion.festivalscope.ai.client.OpenAiClient;
+import likelion.festivalscope.external.ai.OpenAiClient;
 import likelion.festivalscope.document.service.DocumentTextExtractionService;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;

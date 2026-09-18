@@ -9,28 +9,37 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@Slf4j
 public class ApiExceptionHandler {
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ErrorResponse<Void>> handleBusiness(BusinessException exception) {
+    public ResponseEntity<ErrorResponse<Void>> handleBusiness(BusinessException exception, HttpServletRequest request) {
         ErrorCode errorCode = exception.getErrorCode();
+        log.warn("Business exception: method={}, uri={}, errorCode={}, message={}",
+                request.getMethod(), request.getRequestURI(), errorCode.getCode(), exception.getMessage());
         return response(errorCode, exception.getMessage(), null);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse<Void>> handleNotFound(ResourceNotFoundException exception) {
+    public ResponseEntity<ErrorResponse<Void>> handleNotFound(ResourceNotFoundException exception, HttpServletRequest request) {
         ErrorCode errorCode = resolveNotFoundCode(exception.getMessage());
+        log.warn("Resource not found: method={}, uri={}, message={}",
+                request.getMethod(), request.getRequestURI(), exception.getMessage());
         return response(errorCode, errorCode.getMessage(), null);
     }
 
     @ExceptionHandler(AnalysisExecutionException.class)
-    public ResponseEntity<ErrorResponse<Void>> handleAnalysis(AnalysisExecutionException exception) {
+    public ResponseEntity<ErrorResponse<Void>> handleAnalysis(AnalysisExecutionException exception, HttpServletRequest request) {
         ErrorCode errorCode = ErrorCode.ANALYSIS_EXECUTION_FAILED;
+        log.error("Analysis execution failed: method={}, uri={}, message={}",
+                request.getMethod(), request.getRequestURI(), exception.getMessage(), exception);
         return response(errorCode, exception.getMessage(), null);
     }
 
@@ -56,7 +65,10 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse<Void>> handleUnexpected(Exception exception) {
+    public ResponseEntity<ErrorResponse<Void>> handleUnexpected(Exception exception, HttpServletRequest request) {
+        log.error("Unhandled exception: method={}, uri={}, query={}, exceptionType={}, message={}",
+                request.getMethod(), request.getRequestURI(), request.getQueryString(),
+                exception.getClass().getName(), exception.getMessage(), exception);
         return response(ErrorCode.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_SERVER_ERROR.getMessage(), null);
     }
 
