@@ -22,7 +22,11 @@ public interface FestivalAnalysisRepository extends JpaRepository<FestivalAnalys
                    fp.createdAt as inputDate,
                    fa.totalScore as overallScore,
                    fp.startDate as festivalStartDate,
-                   fp.endDate as festivalEndDate
+                   fp.endDate as festivalEndDate,
+                   (select count(recommendation.recommendationId)
+                      from FestivalAnalysisRecommendation recommendation
+                     where recommendation.festivalAnalysis.festivalAnalysisId = fa.festivalAnalysisId)
+                   as recommendationCount
             from FestivalAnalysis fa
             join fa.festivalPlan fp
             where fp.user.userId = :userId

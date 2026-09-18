@@ -11,7 +11,8 @@ public record AnalysisListResponse(
         LocalDateTime inputDate,
         BigDecimal overallScore,
         LocalDate festivalStartDate,
-        LocalDate festivalEndDate
+        LocalDate festivalEndDate,
+        Long recommendationCount
 ) {
     public static AnalysisListResponse from(AnalysisListProjection projection) {
         String sido = projection.getSido();
@@ -26,7 +27,8 @@ public record AnalysisListResponse(
                 projection.getInputDate(),
                 projection.getOverallScore(),
                 projection.getFestivalStartDate(),
-                projection.getFestivalEndDate());
+                projection.getFestivalEndDate(),
+                projection.getRecommendationCount());
     }
 
     public interface AnalysisListProjection {
@@ -38,5 +40,6 @@ public record AnalysisListResponse(
         BigDecimal getOverallScore();
         LocalDate getFestivalStartDate();
         LocalDate getFestivalEndDate();
+        Long getRecommendationCount();
     }
 }

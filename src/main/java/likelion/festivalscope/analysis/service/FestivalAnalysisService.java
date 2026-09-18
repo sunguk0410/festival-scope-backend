@@ -22,6 +22,9 @@ import likelion.festivalscope.analysis.entity.AnalysisItemType;
 import likelion.festivalscope.analysis.entity.AnalysisStatus;
 import likelion.festivalscope.external.tourism.TourApiClient;
 import likelion.festivalscope.analysis.repository.*;
+import likelion.festivalscope.analysis.recommendation.service.RecommendationService;
+import likelion.festivalscope.analysis.dto.response.RecommendationResponse;
+import likelion.festivalscope.analysis.recommendation.repository.FestivalAnalysisRecommendationRepository;
 import likelion.festivalscope.plan.repository.*;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
@@ -66,6 +69,8 @@ public class FestivalAnalysisService {
     private final FestivalAnalysisTourismLinkageRepository festivalAnalysisTourismLinkageRepository;
     private final FestivalAnalysisPoiRepository festivalAnalysisPoiRepository;
     private final TourismLinkageAnalyzer tourismLinkageAnalyzer;
+    private final RecommendationService recommendationService;
+    private final FestivalAnalysisRecommendationRepository festivalAnalysisRecommendationRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(readOnly = true)
@@ -153,6 +158,8 @@ public class FestivalAnalysisService {
                     .orElseThrow();
             saveWeatherRiskSnapshot(weatherRiskItem, weatherRiskAnalyzer.analyze(plan));
 
+            recommendationService.replaceForAnalysis(analysis);
+
             replaceAnalysisStatus(analysis, null, AnalysisStatus.COMPLETED, LocalDateTime.now());
             return analysis.getFestivalAnalysisId();
         } catch (Exception exception) {
@@ -226,11 +233,19 @@ public class FestivalAnalysisService {
     @Transactional(readOnly = true)
     public FestivalAnalysisResponse getAnalysis(Long analysisId) {
         FestivalAnalysis analysis = getAnalysisEntity(analysisId);
+        List<FestivalAnalysisRecommendation> recommendations = festivalAnalysisRecommendationRepository
+                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(analysisId);
+        Map<Long, List<RecommendationResponse>> recommendationsByItem = recommendations.stream()
+                .collect(Collectors.groupingBy(
+                        recommendation -> recommendation.getFestivalAnalysisItem().getFestivalAnalysisItemId(),
+                        LinkedHashMap::new,
+                        Collectors.mapping(this::toRecommendationResponse, Collectors.toList())));
         List<FestivalAnalysisResponse.ItemResponse> items = festivalAnalysisItemRepository
                 .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByFestivalAnalysisItemIdAsc(analysisId)
                 .stream()
                 .map(item -> new FestivalAnalysisResponse.ItemResponse(
-                        item.getFestivalAnalysisItemId(), item.getItemType(), item.getScore()))
+                        item.getFestivalAnalysisItemId(), item.getItemType(), item.getScore(),
+                        recommendationsByItem.getOrDefault(item.getFestivalAnalysisItemId(), List.of())))
                 .toList();
         return new FestivalAnalysisResponse(
                 analysis.getFestivalAnalysisId(),
@@ -240,6 +255,17 @@ public class FestivalAnalysisService {
                 analysis.getAnalysisStatus(),
                 analysis.getCreatedAt(),
                 items);
+    }
+
+    private RecommendationResponse toRecommendationResponse(
+            FestivalAnalysisRecommendation recommendation) {
+        return new RecommendationResponse(
+                recommendation.getRecommendationId(),
+                recommendation.getRecommendationType(),
+                recommendation.getPriority(),
+                recommendation.getTitle(),
+                recommendation.getContent(),
+                recommendation.getDisplayOrder());
     }
 
     @Transactional(readOnly = true)
