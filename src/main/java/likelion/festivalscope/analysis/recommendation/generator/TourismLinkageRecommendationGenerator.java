@@ -8,7 +8,6 @@ import likelion.festivalscope.analysis.recommendation.dto.RecommendationContext;
 import likelion.festivalscope.analysis.recommendation.dto.RecommendationDraft;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,8 +45,7 @@ public class TourismLinkageRecommendationGenerator implements RecommendationGene
             return java.util.Optional.empty();
         }
 
-        String content = "행사장 3km 내 관광·문화자원 " + count + "개가 확인되었으며, "
-                + indicatorSentence("지역 문화·자연자원 수요 지표", tourism.getResourceDemandValue())
+        String content = "행사장 3km 내 연계 가능한 관광·문화자원 " + count + "개가 확인되었습니다. "
                 + "주변 관광지를 축제 전후 동선과 연계해 반일 관광 코스로 구성할 수 있습니다.";
         return java.util.Optional.of(draft(item, "축제 전후 관광 코스를 구성해보세요.", content, TOURISM_ORDER));
     }
@@ -59,8 +57,7 @@ public class TourismLinkageRecommendationGenerator implements RecommendationGene
             return java.util.Optional.empty();
         }
 
-        String content = "행사장 3km 내 음식·쇼핑 자원 " + count + "개가 확인되었으며, "
-                + indicatorSentence("지역 관광소비강도", tourism.getConsumptionIntensityValue())
+        String content = "행사장 3km 내 연계 가능한 음식·쇼핑 자원 " + count + "개가 확인되었습니다. "
                 + "방문객 전용 쿠폰이나 스탬프 투어 등을 통해 축제 방문을 지역 소비로 연결할 수 있습니다.";
         return java.util.Optional.of(draft(item, "지역 상권 연계 프로그램을 운영해보세요.", content, COMMERCE_ORDER));
     }
@@ -72,14 +69,9 @@ public class TourismLinkageRecommendationGenerator implements RecommendationGene
             return java.util.Optional.empty();
         }
 
-        String content = "행사장 5km 내 숙박시설 " + count + "개가 확인되었으며, "
-                + indicatorSentence("지역 관광체류강도", tourism.getStayIntensityValue())
+        String content = "행사장 5km 내 연계 가능한 숙박시설 " + count + "개가 확인되었습니다. "
                 + "야간 프로그램이나 숙박 연계 상품을 통해 당일 방문을 체류형 관광으로 확장할 수 있습니다.";
         return java.util.Optional.of(draft(item, "체류형 관광으로의 확장을 검토해보세요.", content, STAY_ORDER));
-    }
-
-    private String indicatorSentence(String label, BigDecimal value) {
-        return value == null ? "" : label + "는 " + format(value) + "입니다. ";
     }
 
     private RecommendationDraft draft(FestivalAnalysisItem item, String title,
@@ -93,7 +85,4 @@ public class TourismLinkageRecommendationGenerator implements RecommendationGene
                 item);
     }
 
-    private String format(BigDecimal value) {
-        return value.stripTrailingZeros().toPlainString();
-    }
 }
