@@ -34,7 +34,7 @@ public class TrendFitAnalyzer {
         }
 
         int currentYear = Year.now().getValue();
-        List<Integer> recentYears = IntStream.rangeClosed(currentYear - 3, currentYear - 1).boxed().toList();
+        List<Integer> recentYears = IntStream.rangeClosed(currentYear - 5, currentYear - 1).boxed().toList();
         YearMonth historicalStart = YearMonth.of(recentYears.get(0), 1);
         YearMonth historicalEnd = YearMonth.of(recentYears.get(recentYears.size() - 1), 12);
         Optional<Period> eventPeriod = createPreviousYearEventPeriod(plan.getStartDate());
@@ -49,7 +49,7 @@ public class TrendFitAnalyzer {
             requestEnd = latestAllowedMonth;
         }
         // 행사 예정일이 너무 미래라 요청 시작월도 현재보다 뒤에 남는 경우,
-        // 최근 3개년 전체 구간으로 되돌려 유효한 날짜 범위를 만든다.
+        // 최근 5개년 전체 구간으로 되돌려 유효한 날짜 범위를 만든다.
         if (requestStart.isAfter(requestEnd)) {
             requestStart = historicalStart;
         }
