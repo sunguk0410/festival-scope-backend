@@ -12,4 +12,7 @@ public interface FestivalAnalysisRecommendationRepository
 
     List<FestivalAnalysisRecommendation>
     findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(Long analysisId);
+
+    List<FestivalAnalysisRecommendation>
+    findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByDisplayOrderAscRecommendationIdAsc(Long itemId);
 }

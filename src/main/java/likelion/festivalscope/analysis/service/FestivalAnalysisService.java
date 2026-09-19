@@ -33,7 +33,6 @@ import likelion.festivalscope.external.tourism.TourApiClient;
 import likelion.festivalscope.analysis.repository.*;
 import likelion.festivalscope.analysis.recommendation.service.RecommendationService;
 import likelion.festivalscope.analysis.dto.response.RecommendationResponse;
-import likelion.festivalscope.analysis.recommendation.repository.FestivalAnalysisRecommendationRepository;
 import likelion.festivalscope.plan.repository.*;
 import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
@@ -79,7 +78,8 @@ public class FestivalAnalysisService {
     private final FestivalAnalysisPoiRepository festivalAnalysisPoiRepository;
     private final TourismLinkageAnalyzer tourismLinkageAnalyzer;
     private final RecommendationService recommendationService;
-    private final FestivalAnalysisRecommendationRepository festivalAnalysisRecommendationRepository;
+    private final RecommendationQueryService recommendationQueryService;
+    private final AnalysisScoreService analysisScoreService;
     private final FestivalAnalysisInterpretationSnapshotRepository festivalAnalysisInterpretationSnapshotRepository;
     private final ResultInterpretationService resultInterpretationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -218,7 +218,7 @@ public class FestivalAnalysisService {
                 snapshot.getStayLinkageSummary(), poiSummary, indicators, culture.stream().limit(5).toList(),
                 commerce.stream().limit(5).toList(), accommodation.stream().limit(5).toList(),
                 groups(culture), groups(commerce), groups(accommodation)),
-                recommendationsForItem(item), resultInterpretationService.interpretTourismLinkage(snapshot).interpretation());
+                recommendationQueryService.findForItem(item), resultInterpretationService.interpretTourismLinkage(snapshot).interpretation());
     }
 
     private TourismLinkageResponse.RangeCount rangeCount(List<TourismLinkageResponse.Poi> culture, List<TourismLinkageResponse.Poi> commerce, List<TourismLinkageResponse.Poi> accommodation, PoiDistanceRange range) {
@@ -265,12 +265,7 @@ public class FestivalAnalysisService {
     public FinalReportResponse getFinalReport(Long analysisId) {
         FestivalAnalysis analysis = getAnalysisEntity(analysisId);
         FestivalAnalysisResponse summary = getAnalysis(analysisId);
-        List<RecommendationResponse> recommendations = festivalAnalysisRecommendationRepository
-                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(analysis.getFestivalAnalysisId())
-                .stream()
-                .map(this::toRecommendationResponse)
-                .sorted(recommendationComparator())
-                .toList();
+        List<RecommendationResponse> recommendations = recommendationQueryService.findAll(analysis.getFestivalAnalysisId());
         return new FinalReportResponse(summary, recommendations);
     }
 
@@ -293,7 +288,11 @@ public class FestivalAnalysisService {
         for (FestivalAnalysisItem item : items) {
             InterpretationDecision decision = decisionFor(analysis, item);
             festivalAnalysisInterpretationSnapshotRepository.save(toInterpretationSnapshot(analysis, item, decision));
-            BigDecimal score = scoreFor(analysis, item, decision);
+            DemandFitAnalyzer.Result demandResult = item.getItemType() == AnalysisItemType.DEMAND_FIT
+                    ? demandResult(item, analysis.getFestivalPlan()) : null;
+            BigDecimal score = analysisScoreService.score(
+                    analysis.getFestivalPlan(), decision, demandResult,
+                    item.getItemType() == AnalysisItemType.DEMAND_FIT);
             if (score != null) {
                 replaceItemScore(item, score);
                 scores.put(item.getItemType(), score);
@@ -302,88 +301,7 @@ public class FestivalAnalysisService {
         BigDecimal targetScore = scores.get(AnalysisItemType.TARGET_VISITOR);
         BigDecimal trendScore = scores.get(AnalysisItemType.TREND_FIT);
         BigDecimal demandScore = scores.get(AnalysisItemType.DEMAND_FIT);
-        if (targetScore == null || trendScore == null || demandScore == null) return null;
-        return targetScore.add(trendScore).add(demandScore)
-                .divide(BigDecimal.valueOf(3), 2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal scoreFor(FestivalAnalysis analysis, FestivalAnalysisItem item, InterpretationDecision decision) {
-        return switch (item.getItemType()) {
-            case TARGET_VISITOR -> targetVisitorScore(metricDecimal(decision, "gapRate"));
-            case TREND_FIT -> trendFitScore(metricDecimal(decision, "latestGrowthRate"),
-                    metricDecimal(decision, "decliningKeywordRate"), metricDecimal(decision, "eventPeriodGap"));
-            case DEMAND_FIT -> demandFitScore(analysis.getFestivalPlan(), demandResult(item, analysis.getFestivalPlan()), decision);
-            default -> null;
-        };
-    }
-
-    private BigDecimal targetVisitorScore(BigDecimal gap) {
-        if (gap == null) return null;
-        if (gap.compareTo(BigDecimal.valueOf(100)) >= 0) return BigDecimal.valueOf(20);
-        if (gap.compareTo(BigDecimal.valueOf(50)) >= 0) return BigDecimal.valueOf(40);
-        if (gap.compareTo(BigDecimal.valueOf(20)) >= 0) return BigDecimal.valueOf(70);
-        if (gap.compareTo(BigDecimal.valueOf(-20)) >= 0) return BigDecimal.valueOf(100);
-        if (gap.compareTo(BigDecimal.valueOf(-50)) >= 0) return BigDecimal.valueOf(80);
-        return BigDecimal.valueOf(60);
-    }
-
-    private BigDecimal trendFitScore(BigDecimal trend, BigDecimal decliningRate, BigDecimal eventGap) {
-        if (trend == null || decliningRate == null || eventGap == null) return null;
-        BigDecimal trendScore = trend.compareTo(BigDecimal.valueOf(20)) >= 0 ? BigDecimal.valueOf(100)
-                : trend.compareTo(BigDecimal.valueOf(5)) >= 0 ? BigDecimal.valueOf(80)
-                : trend.compareTo(BigDecimal.valueOf(-5)) > 0 ? BigDecimal.valueOf(60)
-                : trend.compareTo(BigDecimal.valueOf(-20)) > 0 ? BigDecimal.valueOf(40) : BigDecimal.valueOf(20);
-        BigDecimal decliningScore = decliningRate.compareTo(BigDecimal.valueOf(40)) < 0 ? BigDecimal.valueOf(100)
-                : decliningRate.compareTo(BigDecimal.valueOf(70)) < 0 ? BigDecimal.valueOf(60) : BigDecimal.valueOf(20);
-        BigDecimal eventScore = eventGap.compareTo(BigDecimal.valueOf(20)) >= 0 ? BigDecimal.valueOf(100)
-                : eventGap.compareTo(BigDecimal.valueOf(-20)) > 0 ? BigDecimal.valueOf(60) : BigDecimal.valueOf(20);
-        return trendScore.multiply(BigDecimal.valueOf(0.40))
-                .add(decliningScore.multiply(BigDecimal.valueOf(0.20)))
-                .add(eventScore.multiply(BigDecimal.valueOf(0.40)))
-                .setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal demandFitScore(FestivalPlan plan, DemandFitAnalyzer.Result result, InterpretationDecision decision) {
-        BigDecimal region = metricDecimal(decision, "regionPercentile");
-        BigDecimal month = metricDecimal(decision, "monthPercentile");
-        if (region == null || month == null || result == null || result.seasonalDemand() == null) return null;
-        BigDecimal weekScore = weekScore(plan, result.seasonalDemand());
-        BigDecimal accessibilityScore = accessibilityScore(result.accessibility());
-        if (weekScore == null || accessibilityScore == null) return null;
-        return region.add(month).add(weekScore).add(accessibilityScore)
-                .divide(BigDecimal.valueOf(4), 2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal weekScore(FestivalPlan plan, DemandFitResponse.SeasonalDemand seasonal) {
-        if (plan.getStartDate() == null || seasonal.recommendedWeek() == null || seasonal.weeklyDemand() == null) return null;
-        int currentWeek = (plan.getStartDate().getDayOfMonth() - 1) / 7 + 1;
-        DemandFitResponse.WeeklyDemand current = seasonal.weeklyDemand().stream()
-                .filter(week -> week.week() == currentWeek).findFirst().orElse(null);
-        DemandFitResponse.WeeklyDemand recommended = seasonal.weeklyDemand().stream()
-                .filter(week -> week.week() == seasonal.recommendedWeek()).findFirst().orElse(null);
-        if (current == null || recommended == null || current.averageDailyVisitors() == null
-                || recommended.averageDailyVisitors() == null || recommended.averageDailyVisitors().signum() <= 0) return null;
-        BigDecimal gap = current.averageDailyVisitors().subtract(recommended.averageDailyVisitors())
-                .divide(recommended.averageDailyVisitors(), 6, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-        if (gap.compareTo(BigDecimal.valueOf(-10)) >= 0) return BigDecimal.valueOf(100);
-        if (gap.compareTo(BigDecimal.valueOf(-25)) >= 0) return BigDecimal.valueOf(70);
-        return BigDecimal.valueOf(40);
-    }
-
-    private BigDecimal accessibilityScore(DemandFitResponse.Accessibility accessibility) {
-        if (accessibility == null) return null;
-        int available = 0;
-        DemandFitResponse.Bus bus = accessibility.bus();
-        if (bus != null && ((bus.routeCount() != null && bus.routeCount() > 0)
-                || (bus.stopCount1km() != null && bus.stopCount1km() > 0))) available++;
-        DemandFitResponse.Rail rail = accessibility.rail();
-        if (rail != null && Boolean.TRUE.equals(rail.available())
-                && rail.nearestStationDistanceM() != null && rail.nearestStationDistanceM() <= 3000) available++;
-        DemandFitResponse.Parking parking = accessibility.parking();
-        if (parking != null && parking.parkingCount() != null && parking.parkingCount() > 0
-                && parking.parkingCapacity() != null && parking.parkingCapacity() > 0) available++;
-        return available == 3 ? BigDecimal.valueOf(100) : available == 2 ? BigDecimal.valueOf(70) : BigDecimal.valueOf(40);
+        return analysisScoreService.overall(targetScore, trendScore, demandScore);
     }
 
     private FestivalAnalysisInterpretationSnapshot toInterpretationSnapshot(
@@ -650,44 +568,6 @@ public class FestivalAnalysisService {
     private String formatCount(Integer value) { return value == null ? "데이터 없음" : value + "건"; }
     private String formatRank(Integer value) { return value == null ? "데이터 없음" : value + "위"; }
 
-    private RecommendationResponse toRecommendationResponse(
-            FestivalAnalysisRecommendation recommendation) {
-        return new RecommendationResponse(
-                recommendation.getRecommendationId(),
-                recommendation.getRecommendationType(),
-                recommendation.getPriority(),
-                recommendation.getTitle(),
-                recommendation.getContent(),
-                recommendation.getDisplayOrder());
-    }
-
-    private List<RecommendationResponse> recommendationsForItem(FestivalAnalysisItem item) {
-        return festivalAnalysisRecommendationRepository
-                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(
-                        item.getFestivalAnalysis().getFestivalAnalysisId())
-                .stream()
-                .filter(recommendation -> recommendation.getFestivalAnalysisItem() != null
-                        && recommendation.getFestivalAnalysisItem().getFestivalAnalysisItemId()
-                        .equals(item.getFestivalAnalysisItemId()))
-                .map(this::toRecommendationResponse)
-                .sorted(recommendationComparator())
-                .toList();
-    }
-
-    private Comparator<RecommendationResponse> recommendationComparator() {
-        return Comparator.comparingInt((RecommendationResponse recommendation) -> priorityOrder(recommendation.priority()))
-                .thenComparing(RecommendationResponse::displayOrder, Comparator.nullsLast(Integer::compareTo))
-                .thenComparing(RecommendationResponse::recommendationId, Comparator.nullsLast(Long::compareTo));
-    }
-
-    private int priorityOrder(RecommendationPriority priority) {
-        return switch (priority) {
-            case IMMEDIATE -> 0;
-            case REVIEW -> 1;
-            case OPTIONAL -> 2;
-        };
-    }
-
     @Transactional(readOnly = true)
     public TargetVisitorResponse getTargetVisitor(Long analysisId) {
         FestivalAnalysis analysis = getAnalysisEntity(analysisId);
@@ -717,7 +597,7 @@ public class FestivalAnalysisService {
                 snapshot.getTargetVisitorCount(), snapshot.getSimilarFestivalCount(), snapshot.getVisitorDataCount(),
                 snapshot.getVisitorAverage(), snapshot.getVisitorMedian(), snapshot.getVisitorMin(), snapshot.getVisitorMax(),
                 snapshot.getGapRate(), snapshot.getSimilarityThreshold(), sameFestivalResponses, similarResponses),
-                recommendationsForItem(item), resultInterpretationService.interpretTargetVisitor(
+                recommendationQueryService.findForItem(item), resultInterpretationService.interpretTargetVisitor(
                         analysis.getFestivalPlan(), snapshot.getTargetVisitorCount(), savedSimilar).interpretation());
     }
 
@@ -760,7 +640,7 @@ public class FestivalAnalysisService {
                 festivalAnalysisDemandRepository.findAllByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()),
                 festivalAnalysisAccessibilityRepository.findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId()).orElse(null));
         return new DemandFitResponse(item.getItemType(), item.getScore(), result.regionalDemand(), result.seasonalDemand(), result.accessibility(),
-                recommendationsForItem(item), resultInterpretationService.interpretDemandFit(
+                recommendationQueryService.findForItem(item), resultInterpretationService.interpretDemandFit(
                         analysis.getFestivalPlan(), result).interpretation());
     }
 
@@ -780,7 +660,7 @@ public class FestivalAnalysisService {
             WeatherRiskResponse response = objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
             return new WeatherRiskResponse(response.itemType(), response.score(), response.station(), response.analysisPeriod(),
                     response.rain(), response.temperature(), response.wind(), response.festivalCondition(),
-                    recommendationsForItem(item), resultInterpretationService.interpretWeatherRisk(response).interpretation());
+                    recommendationQueryService.findForItem(item), resultInterpretationService.interpretWeatherRisk(response).interpretation());
         } catch (Exception exception) {
             throw new AnalysisExecutionException("WEATHER_RISK snapshot parsing failed: " + analysisId, exception);
         }
@@ -800,7 +680,7 @@ public class FestivalAnalysisService {
                 new ConflictRiskResponse.TargetPeriod(snapshot.getTargetStartDate(), snapshot.getTargetEndDate()),
                 new ConflictRiskResponse.HistoryPeriod(snapshot.getHistoryStartYear(), snapshot.getHistoryEndYear()),
                 snapshot.getDirectOverlapCount(), snapshot.getNearbyPeriodCount(), snapshot.getHistoricalSamePeriodCount(),
-                snapshot.getSameRegionCount(), events), recommendationsForItem(item),
+                snapshot.getSameRegionCount(), events), recommendationQueryService.findForItem(item),
                 resultInterpretationService.interpretConflictRisk(snapshot, events).interpretation());
     }
 
@@ -989,7 +869,7 @@ public class FestivalAnalysisService {
         return new TrendFitResponse(
                 item.getItemType(), item.getScore(),
                 new TrendFitResponse.IntegratedTrend(integratedInterest, integratedGrowth),
-                keywordTrends, aroundEvent, recommendationsForItem(item),
+                keywordTrends, aroundEvent, recommendationQueryService.findForItem(item),
                 resultInterpretationService.interpretTrendFit(analysis, yearlyRows, monthlyRows).interpretation());
     }
 
