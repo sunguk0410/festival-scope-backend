@@ -42,7 +42,9 @@ public class WeatherRiskAnalyzer {
         WeatherStationService.Selection selected = stationService.findNearest(plan.getLatitude(), plan.getLongitude());
         // 개최 예정 연도보다 과거인 연도만 우선 후보로 삼되, 현재 연도도
         // 동일 기간의 종료일까지 자료가 공개됐다면 분석에 포함할 수 있다.
-        int latestYear = Math.min(plan.getStartDate().getYear() - 1, LocalDate.now().getYear());
+        // KMA ASOS 일자료는 당해 연도 자료가 아직 확정되지 않을 수 있으므로
+        // 12개월 전체를 조회할 수 있는 가장 최근 연도까지만 사용한다.
+        int latestYear = Math.min(plan.getStartDate().getYear() - 1, LocalDate.now().getYear() - 1);
         LocalDate latestAvailableDate = LocalDate.now().minusDays(1);
         log.info("WEATHER_RISK analysis started: stationId={}, stationName={}, distanceKm={}, latestAllowedYear={}, requestedYears={}",
                 selected.station().getStationId(), selected.station().getStationName(), selected.distanceKm(), latestYear, requestedYears);
