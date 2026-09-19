@@ -24,6 +24,15 @@ public class AnalysisScoreService {
         return target.add(trend).add(demand).divide(BigDecimal.valueOf(3), 2, RoundingMode.HALF_UP);
     }
 
+    public String grade(BigDecimal totalScore) {
+        if (totalScore == null) return null;
+        if (totalScore.compareTo(BigDecimal.valueOf(85)) >= 0) return "A";
+        if (totalScore.compareTo(BigDecimal.valueOf(70)) >= 0) return "B";
+        if (totalScore.compareTo(BigDecimal.valueOf(55)) >= 0) return "C";
+        if (totalScore.compareTo(BigDecimal.valueOf(40)) > 0) return "D";
+        return "F";
+    }
+
     private BigDecimal targetVisitorScore(BigDecimal gap) {
         if (gap == null) return null;
         if (gap.compareTo(BigDecimal.valueOf(100)) >= 0) return BigDecimal.valueOf(20);

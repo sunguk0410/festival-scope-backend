@@ -19,6 +19,7 @@ public class FestivalAnalysis extends CreatedAtEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "festival_plan_id", nullable = false) private FestivalPlan festivalPlan;
     @Column(name = "analysis_version", nullable = false, length = 30) private String analysisVersion;
     @Column(name = "total_score", precision = 5, scale = 2) private BigDecimal totalScore;
+    @Column(name = "score_grade", length = 1) private String scoreGrade;
     @Enumerated(EnumType.STRING) @Column(name = "analysis_status", nullable = false, length = 20) private AnalysisStatus analysisStatus;
     @Column(name = "started_at") private LocalDateTime startedAt;
     @Column(name = "completed_at") private LocalDateTime completedAt;

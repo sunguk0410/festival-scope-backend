@@ -256,6 +256,7 @@ public class FestivalAnalysisService {
                 analysis.getFestivalPlan().getFestivalPlanId(),
                 analysis.getFestivalPlan().getFestivalName(),
                 analysis.getTotalScore(),
+                analysis.getScoreGrade(),
                 analysis.getAnalysisStatus(),
                 analysis.getCreatedAt(),
                 items);
@@ -962,6 +963,7 @@ public class FestivalAnalysisService {
                 .festivalPlan(analysis.getFestivalPlan())
                 .analysisVersion(analysis.getAnalysisVersion())
                 .totalScore(totalScore)
+                .scoreGrade(analysisScoreService.grade(totalScore))
                 .analysisStatus(status)
                 .startedAt(analysis.getStartedAt())
                 .completedAt(completedAt)
