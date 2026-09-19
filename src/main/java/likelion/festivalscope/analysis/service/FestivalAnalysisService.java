@@ -456,7 +456,7 @@ public class FestivalAnalysisService {
                 .toList();
         List<ChartDataResponse> chartData = interests.stream().skip(Math.max(0, interests.size() - 5))
                 .map(value -> data(String.valueOf(value.year()), value.interest())).toList();
-        return summary(item, "검색 관심도 추이", decision,
+        return summary(item, "트렌드 핏", decision,
                 primary(formatPercent(metricDecimal(decision, "latestGrowthRate")), "최근 검색 관심도"),
                 metrics(metric("하락 키워드", formatPercent(metricDecimal(decision, "decliningKeywordRate"))),
                         metric("개최 시기 관심", formatPercent(metricDecimal(decision, "eventPeriodGap")))),
@@ -471,7 +471,7 @@ public class FestivalAnalysisService {
         DemandFitResponse.SeasonalDemand seasonal = result.seasonalDemand();
         Integer month = seasonal == null ? null : seasonal.eventMonth();
         Integer monthRank = metricInteger(decision, "eventMonthRank");
-        return summary(item, "개최 시기 관광수요", decision,
+        return summary(item, "지역·시기 관광수요 적합성", decision,
                 primary(monthRank == null ? "데이터 없음" : monthRank + "위", "개최월 관광수요"),
                 metrics(metric("지역 관광수요", formatPercent(metricDecimal(decision, "regionPercentile"))),
                         metric("개최월 관광수요", formatPercent(metricDecimal(decision, "monthPercentile"))),
@@ -491,7 +491,7 @@ public class FestivalAnalysisService {
                 .findAllByFestivalAnalysisItem_FestivalAnalysisItemIdOrderByEventYearAscStartDateAsc(item.getFestivalAnalysisItemId()).stream()
                 .map(e -> new ConflictRiskResponse.Event(e.getFestival() == null ? null : e.getFestival().getFestivalId(), e.getEventName(), e.getEventYear(), e.getSido(), e.getSigungu(), e.getRegionRelation(), e.getStartDate(), e.getEndDate(), e.getEventBasis(), e.getConflictType(), e.getOverlapDays(), e.getSameTheme(), e.getVisitorCount())).toList();
         InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
-        return summary(item, "행사 일정 중복 위험", decision,
+        return summary(item, "일정 중복·혼잡 리스크", decision,
                 primary(formatCount(metricInteger(decision, "possibleConflictCount")), "중복 가능 행사"),
                 metrics(metric("동일 날짜", formatCount(metricInteger(decision, "directOverlapCount"))),
                         metric("인접 시기", formatCount(metricInteger(decision, "nearbyPeriodCount")))), null);
@@ -522,7 +522,7 @@ public class FestivalAnalysisService {
             if (!primaryKey.equals("temperature")) metrics.add(metric("대표 온도", formatPercent(temperature)));
             if (!primaryKey.equals("wind")) metrics.add(metric("강풍", formatPercent(wind)));
             metrics.add(metric("행사 유형", valueOrData(metricValue(decision, "spaceType"))));
-            return summary(item, "기상 위험", decision,
+            return summary(item, "날씨 리스크", decision,
                     primary(formatPercent(switch (primaryKey) { case "rain" -> rain; case "temperature" -> temperature; default -> wind; }), primaryLabel),
                     metrics.stream().limit(3).toList(), null);
         } catch (Exception exception) {
@@ -535,7 +535,7 @@ public class FestivalAnalysisService {
                 .findByFestivalAnalysisItem_FestivalAnalysisItemId(item.getFestivalAnalysisItemId())
                 .orElseThrow(() -> new AnalysisExecutionException("TOURISM_LINKAGE snapshot not found: " + analysis.getFestivalAnalysisId()));
         InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
-        return summary(item, "주변 관광 연계", decision,
+        return summary(item, "관광 연계 잠재력", decision,
                 primary(formatPoi(metricInteger(decision, "totalPoiWithin5km")), "반경 5km 연계 가능 자원"),
                 metrics(metric("관광·문화", formatPoi(metricInteger(decision, "tourismCultureWithin3km"))),
                         metric("음식·쇼핑", formatPoi(metricInteger(decision, "foodShoppingWithin3km"))),

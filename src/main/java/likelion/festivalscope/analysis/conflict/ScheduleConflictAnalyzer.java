@@ -61,7 +61,8 @@ public class ScheduleConflictAnalyzer {
             if (history.getYear() >= historyStart && history.getYear() <= historyEnd) {
                 LocalDate windowStart = sameMonthDay(plan.getStartDate(), history.getYear()).minusDays(HISTORICAL_DAYS);
                 LocalDate windowEnd = sameMonthDay(plan.getEndDate(), history.getYear()).plusDays(HISTORICAL_DAYS);
-                if (!history.getStartDate().isAfter(windowEnd) && !history.getEndDate().isBefore(windowStart)) {
+                if (sameMonth(plan, history)
+                        || (!history.getStartDate().isAfter(windowEnd) && !history.getEndDate().isBefore(windowStart))) {
                     candidates.add(new Candidate(history, ConflictType.HISTORICAL_SAME_PERIOD,
                             EventBasis.HISTORICAL, 0, RegionRelation.SAME_REGION));
                 }
@@ -113,6 +114,17 @@ public class ScheduleConflictAnalyzer {
     private LocalDate sameMonthDay(LocalDate date, int year) {
         return MonthDay.of(date.getMonthValue(), Math.min(date.getDayOfMonth(),
                 YearMonth.of(year, date.getMonthValue()).lengthOfMonth())).atYear(year);
+    }
+
+    private boolean sameMonth(FestivalPlan plan, FestivalHistory history) {
+        int targetStartMonth = plan.getStartDate().getMonthValue();
+        int targetEndMonth = plan.getEndDate().getMonthValue();
+        int historyStartMonth = history.getStartDate().getMonthValue();
+        int historyEndMonth = history.getEndDate().getMonthValue();
+        return historyStartMonth == targetStartMonth
+                || historyStartMonth == targetEndMonth
+                || historyEndMonth == targetStartMonth
+                || historyEndMonth == targetEndMonth;
     }
 
     private String normalize(String value) {
