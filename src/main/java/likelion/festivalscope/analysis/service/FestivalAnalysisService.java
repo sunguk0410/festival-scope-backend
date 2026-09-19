@@ -311,6 +311,7 @@ public class FestivalAnalysisService {
                 FestivalAnalysisInterpretationSnapshot.builder()
                         .festivalAnalysisItem(item)
                         .status(decision.status())
+                        .statusLevel(decision.statusLevel())
                         .summary(decision.interpretation() == null ? "데이터 없음" : decision.interpretation().summary())
                         .detail(decision.interpretation() == null ? "데이터 없음" : decision.interpretation().detail());
         switch (item.getItemType()) {
@@ -363,7 +364,8 @@ public class FestivalAnalysisService {
             case WEATHER_RISK -> List.of(metricEntry("rainOccurrenceRate", snapshot.getRainOccurrenceRate()), metricEntry("temperatureType", temperatureType), metricEntry("temperatureOccurrenceRate", snapshot.getTemperatureOccurrenceRate()), metricEntry("windOccurrenceRate", snapshot.getWindOccurrenceRate()), metricEntry("spaceType", snapshot.getSpaceType()), metricEntry("highRiskCount", snapshot.getHighRiskCount()), metricEntry("moderateRiskCount", snapshot.getModerateRiskCount()));
             case TOURISM_LINKAGE -> List.of(metricEntry("totalPoiWithin5km", snapshot.getTotalPoiWithin5km()), metricEntry("tourismCultureWithin3km", snapshot.getTourismCultureWithin3km()), metricEntry("foodShoppingWithin3km", snapshot.getFoodShoppingWithin3km()), metricEntry("accommodationWithin5km", snapshot.getAccommodationWithin5km()), metricEntry("highPotentialCount", snapshot.getHighPotentialCount()), metricEntry("lowPotentialCount", snapshot.getLowPotentialCount()));
         };
-        return new InterpretationDecision(snapshot.getStatus(), new ResultInterpretation(snapshot.getSummary(), snapshot.getDetail()), metrics);
+        return new InterpretationDecision(snapshot.getStatus(), snapshot.getStatusLevel(),
+                new ResultInterpretation(snapshot.getSummary(), snapshot.getDetail()), metrics);
     }
 
     private InterpretationMetric metricEntry(String key, Object value) { return new InterpretationMetric(key, value); }
@@ -542,7 +544,7 @@ public class FestivalAnalysisService {
 
     private AnalysisItemSummaryResponse summary(FestivalAnalysisItem item, String title, InterpretationDecision decision,
                                                 PrimaryMetricResponse primary, List<MetricResponse> metrics, ChartResponse chart) {
-        return new AnalysisItemSummaryResponse(item.getItemType(), title, decision.status(), item.getScore(), primary,
+        return new AnalysisItemSummaryResponse(item.getItemType(), title, decision.status(), decision.statusLevel(), item.getScore(), primary,
                 metrics, chart, decision.interpretation() == null ? "데이터 없음" : decision.interpretation().summary());
     }
 

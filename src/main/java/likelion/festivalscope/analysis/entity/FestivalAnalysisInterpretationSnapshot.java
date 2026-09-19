@@ -25,6 +25,7 @@ public class FestivalAnalysisInterpretationSnapshot extends CreatedAtEntity {
     private FestivalAnalysisItem festivalAnalysisItem;
 
     @Column(nullable = false, length = 1000) private String status;
+    @Enumerated(EnumType.STRING) @Column(name = "status_level", length = 20) private StatusLevel statusLevel;
     @Column(nullable = false, columnDefinition = "TEXT") private String summary;
     @Column(nullable = false, columnDefinition = "TEXT") private String detail;
 
