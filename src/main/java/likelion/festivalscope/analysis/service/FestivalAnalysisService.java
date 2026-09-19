@@ -13,6 +13,7 @@ import likelion.festivalscope.analysis.conflict.ScheduleConflictAnalyzer;
 import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
 import likelion.festivalscope.analysis.dto.response.TourismLinkageResponse;
 import likelion.festivalscope.analysis.dto.response.FestivalAnalysisResponse;
+import likelion.festivalscope.analysis.dto.response.FinalReportResponse;
 import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
 import likelion.festivalscope.analysis.dto.response.ResultInterpretation;
@@ -258,6 +259,19 @@ public class FestivalAnalysisService {
                 analysis.getAnalysisStatus(),
                 analysis.getCreatedAt(),
                 items);
+    }
+
+    @Transactional(readOnly = true)
+    public FinalReportResponse getFinalReport(Long analysisId) {
+        FestivalAnalysis analysis = getAnalysisEntity(analysisId);
+        FestivalAnalysisResponse summary = getAnalysis(analysisId);
+        List<RecommendationResponse> recommendations = festivalAnalysisRecommendationRepository
+                .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByDisplayOrderAscRecommendationIdAsc(analysis.getFestivalAnalysisId())
+                .stream()
+                .map(this::toRecommendationResponse)
+                .sorted(recommendationComparator())
+                .toList();
+        return new FinalReportResponse(summary, recommendations);
     }
 
     private AnalysisItemSummaryResponse toAnalysisItemSummary(FestivalAnalysis analysis, FestivalAnalysisItem item) {
@@ -562,7 +576,22 @@ public class FestivalAnalysisService {
                         && recommendation.getFestivalAnalysisItem().getFestivalAnalysisItemId()
                         .equals(item.getFestivalAnalysisItemId()))
                 .map(this::toRecommendationResponse)
+                .sorted(recommendationComparator())
                 .toList();
+    }
+
+    private Comparator<RecommendationResponse> recommendationComparator() {
+        return Comparator.comparingInt((RecommendationResponse recommendation) -> priorityOrder(recommendation.priority()))
+                .thenComparing(RecommendationResponse::displayOrder, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(RecommendationResponse::recommendationId, Comparator.nullsLast(Long::compareTo));
+    }
+
+    private int priorityOrder(RecommendationPriority priority) {
+        return switch (priority) {
+            case IMMEDIATE -> 0;
+            case REVIEW -> 1;
+            case OPTIONAL -> 2;
+        };
     }
 
     @Transactional(readOnly = true)

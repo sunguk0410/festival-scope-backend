@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import likelion.festivalscope.analysis.dto.response.FestivalAnalysisResponse;
+import likelion.festivalscope.analysis.dto.response.FinalReportResponse;
 import likelion.festivalscope.analysis.dto.response.TargetVisitorResponse;
 import likelion.festivalscope.analysis.dto.response.TrendFitResponse;
 import likelion.festivalscope.analysis.dto.response.DemandFitResponse;
@@ -67,6 +68,19 @@ public class FestivalAnalysisController {
     public FestivalAnalysisResponse getAnalysis(@Parameter(description = "조회할 FestivalAnalysis ID", example = "1") @PathVariable Long analysisId) {
         festivalAnalysisService.verifyAnalysisOwner(analysisId);
         return festivalAnalysisService.getAnalysis(analysisId);
+    }
+
+    @Operation(summary = "최종 리포트 조회", description = "요약 화면 데이터와 동일한 festival_analysis_id의 전체 추천 결과를 함께 조회합니다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "최종 리포트 조회 성공", content = @Content(schema = @Schema(implementation = FinalReportResponse.class))),
+            @ApiResponse(responseCode = "404", description = "분석 결과를 찾을 수 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/api/analyses/{analysisId}/report")
+    public FinalReportResponse getFinalReport(
+            @Parameter(description = "조회할 FestivalAnalysis ID", example = "1")
+            @PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
+        return festivalAnalysisService.getFinalReport(analysisId);
     }
 
     @Operation(summary = "목표 방문객 타당성 상세 조회", description = "설정된 목표 방문객 수와 유사 축제의 실제 방문객 규모를 비교한 상세 분석 결과를 조회합니다.")
