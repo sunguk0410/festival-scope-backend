@@ -170,9 +170,9 @@ public class FestivalAnalysisService {
             saveWeatherRiskSnapshot(weatherRiskItem, weatherRiskAnalyzer.analyze(plan));
 
             recommendationService.replaceForAnalysis(analysis);
-            saveInterpretationSnapshots(analysis);
+            BigDecimal overallScore = saveInterpretationSnapshots(analysis);
 
-            replaceAnalysisStatus(analysis, null, AnalysisStatus.COMPLETED, LocalDateTime.now());
+            replaceAnalysisStatus(analysis, overallScore, AnalysisStatus.COMPLETED, LocalDateTime.now());
             return analysis.getFestivalAnalysisId();
         } catch (Exception exception) {
             replaceAnalysisStatus(analysis, null, AnalysisStatus.FAILED, LocalDateTime.now());
@@ -285,11 +285,105 @@ public class FestivalAnalysisService {
         };
     }
 
-    private void saveInterpretationSnapshots(FestivalAnalysis analysis) {
-        festivalAnalysisItemRepository
+    private BigDecimal saveInterpretationSnapshots(FestivalAnalysis analysis) {
+        List<FestivalAnalysisItem> items = festivalAnalysisItemRepository
                 .findAllByFestivalAnalysis_FestivalAnalysisIdOrderByFestivalAnalysisItemIdAsc(analysis.getFestivalAnalysisId())
-                .forEach(item -> festivalAnalysisInterpretationSnapshotRepository.save(
-                        toInterpretationSnapshot(analysis, item, decisionFor(analysis, item))));
+                .stream().toList();
+        Map<AnalysisItemType, BigDecimal> scores = new EnumMap<>(AnalysisItemType.class);
+        for (FestivalAnalysisItem item : items) {
+            InterpretationDecision decision = decisionFor(analysis, item);
+            festivalAnalysisInterpretationSnapshotRepository.save(toInterpretationSnapshot(analysis, item, decision));
+            BigDecimal score = scoreFor(analysis, item, decision);
+            if (score != null) {
+                replaceItemScore(item, score);
+                scores.put(item.getItemType(), score);
+            }
+        }
+        BigDecimal targetScore = scores.get(AnalysisItemType.TARGET_VISITOR);
+        BigDecimal trendScore = scores.get(AnalysisItemType.TREND_FIT);
+        BigDecimal demandScore = scores.get(AnalysisItemType.DEMAND_FIT);
+        if (targetScore == null || trendScore == null || demandScore == null) return null;
+        return targetScore.add(trendScore).add(demandScore)
+                .divide(BigDecimal.valueOf(3), 2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal scoreFor(FestivalAnalysis analysis, FestivalAnalysisItem item, InterpretationDecision decision) {
+        return switch (item.getItemType()) {
+            case TARGET_VISITOR -> targetVisitorScore(metricDecimal(decision, "gapRate"));
+            case TREND_FIT -> trendFitScore(metricDecimal(decision, "latestGrowthRate"),
+                    metricDecimal(decision, "decliningKeywordRate"), metricDecimal(decision, "eventPeriodGap"));
+            case DEMAND_FIT -> demandFitScore(analysis.getFestivalPlan(), demandResult(item, analysis.getFestivalPlan()), decision);
+            default -> null;
+        };
+    }
+
+    private BigDecimal targetVisitorScore(BigDecimal gap) {
+        if (gap == null) return null;
+        if (gap.compareTo(BigDecimal.valueOf(100)) >= 0) return BigDecimal.valueOf(20);
+        if (gap.compareTo(BigDecimal.valueOf(50)) >= 0) return BigDecimal.valueOf(40);
+        if (gap.compareTo(BigDecimal.valueOf(20)) >= 0) return BigDecimal.valueOf(70);
+        if (gap.compareTo(BigDecimal.valueOf(-20)) >= 0) return BigDecimal.valueOf(100);
+        if (gap.compareTo(BigDecimal.valueOf(-50)) >= 0) return BigDecimal.valueOf(80);
+        return BigDecimal.valueOf(60);
+    }
+
+    private BigDecimal trendFitScore(BigDecimal trend, BigDecimal decliningRate, BigDecimal eventGap) {
+        if (trend == null || decliningRate == null || eventGap == null) return null;
+        BigDecimal trendScore = trend.compareTo(BigDecimal.valueOf(20)) >= 0 ? BigDecimal.valueOf(100)
+                : trend.compareTo(BigDecimal.valueOf(5)) >= 0 ? BigDecimal.valueOf(80)
+                : trend.compareTo(BigDecimal.valueOf(-5)) > 0 ? BigDecimal.valueOf(60)
+                : trend.compareTo(BigDecimal.valueOf(-20)) > 0 ? BigDecimal.valueOf(40) : BigDecimal.valueOf(20);
+        BigDecimal decliningScore = decliningRate.compareTo(BigDecimal.valueOf(40)) < 0 ? BigDecimal.valueOf(100)
+                : decliningRate.compareTo(BigDecimal.valueOf(70)) < 0 ? BigDecimal.valueOf(60) : BigDecimal.valueOf(20);
+        BigDecimal eventScore = eventGap.compareTo(BigDecimal.valueOf(20)) >= 0 ? BigDecimal.valueOf(100)
+                : eventGap.compareTo(BigDecimal.valueOf(-20)) > 0 ? BigDecimal.valueOf(60) : BigDecimal.valueOf(20);
+        return trendScore.multiply(BigDecimal.valueOf(0.40))
+                .add(decliningScore.multiply(BigDecimal.valueOf(0.20)))
+                .add(eventScore.multiply(BigDecimal.valueOf(0.40)))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal demandFitScore(FestivalPlan plan, DemandFitAnalyzer.Result result, InterpretationDecision decision) {
+        BigDecimal region = metricDecimal(decision, "regionPercentile");
+        BigDecimal month = metricDecimal(decision, "monthPercentile");
+        if (region == null || month == null || result == null || result.seasonalDemand() == null) return null;
+        BigDecimal weekScore = weekScore(plan, result.seasonalDemand());
+        BigDecimal accessibilityScore = accessibilityScore(result.accessibility());
+        if (weekScore == null || accessibilityScore == null) return null;
+        return region.add(month).add(weekScore).add(accessibilityScore)
+                .divide(BigDecimal.valueOf(4), 2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal weekScore(FestivalPlan plan, DemandFitResponse.SeasonalDemand seasonal) {
+        if (plan.getStartDate() == null || seasonal.recommendedWeek() == null || seasonal.weeklyDemand() == null) return null;
+        int currentWeek = (plan.getStartDate().getDayOfMonth() - 1) / 7 + 1;
+        DemandFitResponse.WeeklyDemand current = seasonal.weeklyDemand().stream()
+                .filter(week -> week.week() == currentWeek).findFirst().orElse(null);
+        DemandFitResponse.WeeklyDemand recommended = seasonal.weeklyDemand().stream()
+                .filter(week -> week.week() == seasonal.recommendedWeek()).findFirst().orElse(null);
+        if (current == null || recommended == null || current.averageDailyVisitors() == null
+                || recommended.averageDailyVisitors() == null || recommended.averageDailyVisitors().signum() <= 0) return null;
+        BigDecimal gap = current.averageDailyVisitors().subtract(recommended.averageDailyVisitors())
+                .divide(recommended.averageDailyVisitors(), 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100));
+        if (gap.compareTo(BigDecimal.valueOf(-10)) >= 0) return BigDecimal.valueOf(100);
+        if (gap.compareTo(BigDecimal.valueOf(-25)) >= 0) return BigDecimal.valueOf(70);
+        return BigDecimal.valueOf(40);
+    }
+
+    private BigDecimal accessibilityScore(DemandFitResponse.Accessibility accessibility) {
+        if (accessibility == null) return null;
+        int available = 0;
+        DemandFitResponse.Bus bus = accessibility.bus();
+        if (bus != null && ((bus.routeCount() != null && bus.routeCount() > 0)
+                || (bus.stopCount1km() != null && bus.stopCount1km() > 0))) available++;
+        DemandFitResponse.Rail rail = accessibility.rail();
+        if (rail != null && Boolean.TRUE.equals(rail.available())
+                && rail.nearestStationDistanceM() != null && rail.nearestStationDistanceM() <= 3000) available++;
+        DemandFitResponse.Parking parking = accessibility.parking();
+        if (parking != null && parking.parkingCount() != null && parking.parkingCount() > 0
+                && parking.parkingCapacity() != null && parking.parkingCapacity() > 0) available++;
+        return available == 3 ? BigDecimal.valueOf(100) : available == 2 ? BigDecimal.valueOf(70) : BigDecimal.valueOf(40);
     }
 
     private FestivalAnalysisInterpretationSnapshot toInterpretationSnapshot(
