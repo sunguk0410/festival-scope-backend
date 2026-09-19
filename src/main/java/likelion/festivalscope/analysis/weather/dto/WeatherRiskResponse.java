@@ -16,7 +16,9 @@ public record WeatherRiskResponse(AnalysisItemType itemType, BigDecimal score, S
     public record Station(String stationId, String stationName, BigDecimal distanceKm) {}
     public record AnalysisPeriod(int requestedYears, int actualYears, int startYear, int endYear, int totalDays) {}
     public record Rain(int occurrenceYears, BigDecimal occurrenceRate, int validDays, int rainDays,
-                       BigDecimal rainDayRate, BigDecimal averageRainfallMm) {}
+                       BigDecimal rainDayRate, BigDecimal averageRainfallMm,
+                       List<MonthlyRainOccurrence> monthlyRainOccurrenceRates) {}
+    public record MonthlyRainOccurrence(int month, int validDays, int rainDays, BigDecimal occurrenceRate) {}
     public record Temperature(int validDays, BigDecimal averageTemperature, BigDecimal averageMaxTemperature,
                               BigDecimal averageMinTemperature, int hotOccurrenceYears, BigDecimal hotOccurrenceRate,
                               int coldOccurrenceYears, BigDecimal coldOccurrenceRate) {}

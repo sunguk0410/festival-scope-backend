@@ -5,6 +5,7 @@ import likelion.festivalscope.external.weather.dto.AsosDailyWeatherDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 
 public class WeatherStatisticsCalculator {
@@ -25,6 +26,10 @@ public class WeatherStatisticsCalculator {
     }
 
     public Result calculate(List<YearWeather> years) {
+        return calculate(years, years);
+    }
+
+    public Result calculate(List<YearWeather> years, List<YearWeather> monthlyYears) {
         List<AsosDailyWeatherDto> all = years.stream().flatMap(y -> y.days().stream()).toList();
         List<BigDecimal> rain = all.stream().map(AsosDailyWeatherDto::rainfallMm).filter(v -> v != null).toList();
         List<BigDecimal> temp = all.stream().map(AsosDailyWeatherDto::averageTemperature).filter(v -> v != null).toList();
@@ -39,7 +44,20 @@ public class WeatherStatisticsCalculator {
         int windYears = (int) years.stream().filter(y -> y.days().stream().anyMatch(d -> d.maximumWindSpeed() != null && d.maximumWindSpeed().compareTo(strongWindThreshold) >= 0)).count();
         return new Result(rainYears, rate(rainYears, years.size()), rain.size(), rainDays(rain), rate(rainDays(rain), rain.size()), average(rain),
                 temp.size(), average(temp), average(maxTemp), average(minTemp), hotYears, rate(hotYears, years.size()), coldYears, rate(coldYears, years.size()),
-                avgWind.size(), average(avgWind), maxWind.stream().max(Comparator.naturalOrder()).orElse(null), windYears, rate(windYears, years.size()), windDays.size(), rate(windDays.size(), maxWind.size()));
+                avgWind.size(), average(avgWind), maxWind.stream().max(Comparator.naturalOrder()).orElse(null), windYears, rate(windYears, years.size()), windDays.size(), rate(windDays.size(), maxWind.size()),
+                monthlyRainOccurrenceRates(monthlyYears));
+    }
+
+    private List<MonthlyRainOccurrence> monthlyRainOccurrenceRates(List<YearWeather> years) {
+        List<MonthlyRainOccurrence> result = new ArrayList<>();
+        for (int month = 1; month <= 12; month++) {
+            int monthNo = month;
+            List<AsosDailyWeatherDto> days = years.stream().flatMap(year -> year.days().stream())
+                    .filter(day -> day.date().getMonthValue() == monthNo && day.rainfallMm() != null).toList();
+            int rainDays = (int) days.stream().filter(day -> day.rainfallMm().compareTo(rainThreshold) > 0).count();
+            result.add(new MonthlyRainOccurrence(month, days.size(), rainDays, rate(rainDays, days.size())));
+        }
+        return result;
     }
 
     private int rainDays(List<BigDecimal> values) { return (int) values.stream().filter(v -> v.compareTo(rainThreshold) > 0).count(); }
@@ -51,5 +69,7 @@ public class WeatherStatisticsCalculator {
                          int validTemperatureDays, BigDecimal averageTemperature, BigDecimal averageMaxTemperature, BigDecimal averageMinTemperature,
                          int hotOccurrenceYears, BigDecimal hotOccurrenceRate, int coldOccurrenceYears, BigDecimal coldOccurrenceRate,
                          int validWindDays, BigDecimal averageWindSpeed, BigDecimal maxWindSpeed, int strongWindOccurrenceYears,
-                         BigDecimal strongWindOccurrenceRate, int strongWindDays, BigDecimal strongWindDayRate) {}
+                         BigDecimal strongWindOccurrenceRate, int strongWindDays, BigDecimal strongWindDayRate,
+                         List<MonthlyRainOccurrence> monthlyRainOccurrenceRates) {}
+    public record MonthlyRainOccurrence(int month, int validDays, int rainDays, BigDecimal occurrenceRate) {}
 }

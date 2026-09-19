@@ -39,33 +39,46 @@ public class KmaAsosClient {
             throw new AnalysisExecutionException("KMA_ASOS_API_KEY가 설정되지 않았습니다.");
         try {
             log.info("KMA ASOS daily request: stationId={}, from={}, to={}", stationId, from, to);
-            URI requestUri = clientUri(uri -> uri.queryParam("serviceKey", serviceKey)
-                    .queryParam("pageNo", 1).queryParam("numOfRows", 100)
-                    .queryParam("dataType", "JSON").queryParam("dataCd", "ASOS")
-                    .queryParam("dateCd", "DAY").queryParam("stnIds", stationId)
-                    .queryParam("startDt", from.toString().replace("-", ""))
-                    .queryParam("endDt", to.toString().replace("-", "")).build());
-            log.info("KMA ASOS request parameters: {}", requestUri.getQuery().replaceFirst("serviceKey=[^&]*", "serviceKey=***"));
-            String body = client.get().uri(requestUri).retrieve().body(String.class);
-            JsonNode root = objectMapper.readTree(body);
-            JsonNode header = root.path("response").path("header");
-            String resultCode = header.path("resultCode").asText();
-            String resultMsg = header.path("resultMsg").asText();
-            JsonNode items = root.path("response").path("body").path("items").path("item");
-            if (items.isMissingNode() || items.isNull()) {
-                log.warn("KMA ASOS returned no items: stationId={}, from={}, to={}, resultCode={}, resultMsg={}, body={}",
-                        stationId, from, to, resultCode, resultMsg, abbreviate(body));
-                if (!resultCode.isBlank() && !"00".equals(resultCode))
-                    throw new IllegalStateException("KMA ASOS resultCode=" + resultCode + ", resultMsg=" + resultMsg);
-                return List.of();
-            }
             List<AsosDailyWeatherDto> result = new ArrayList<>();
-            Iterable<JsonNode> itemNodes = items.isArray() ? items : List.of(items);
-            for (JsonNode item : itemNodes) {
-                result.add(new AsosDailyWeatherDto(LocalDate.parse(text(item, "tm")),
-                        decimal(item, "sumRn"), decimal(item, "avgTa"), decimal(item, "maxTa"), decimal(item, "minTa"),
-                        decimal(item, "avgWs"), decimal(item, "maxWs")));
-            }
+            int pageNo = 1;
+            int totalCount;
+            do {
+                int requestedPage = pageNo;
+                URI requestUri = clientUri(uri -> uri.queryParam("serviceKey", serviceKey)
+                        .queryParam("pageNo", requestedPage).queryParam("numOfRows", 100)
+                        .queryParam("dataType", "JSON").queryParam("dataCd", "ASOS")
+                        .queryParam("dateCd", "DAY").queryParam("stnIds", stationId)
+                        .queryParam("startDt", from.toString().replace("-", ""))
+                        .queryParam("endDt", to.toString().replace("-", "")).build());
+                log.info("KMA ASOS request parameters: {}", requestUri.getQuery().replaceFirst("serviceKey=[^&]*", "serviceKey=***"));
+                String body = client.get().uri(requestUri).retrieve().body(String.class);
+                JsonNode root = objectMapper.readTree(body);
+                JsonNode header = root.path("response").path("header");
+                String resultCode = header.path("resultCode").asText();
+                String resultMsg = header.path("resultMsg").asText();
+                JsonNode responseBody = root.path("response").path("body");
+                JsonNode items = responseBody.path("items").path("item");
+                totalCount = responseBody.path("totalCount").asInt(0);
+                if (items.isMissingNode() || items.isNull()) {
+                    if (requestedPage == 1) {
+                        log.warn("KMA ASOS returned no items: stationId={}, from={}, to={}, resultCode={}, resultMsg={}, body={}",
+                                stationId, from, to, resultCode, resultMsg, abbreviate(body));
+                        if (!resultCode.isBlank() && !"00".equals(resultCode))
+                            throw new IllegalStateException("KMA ASOS resultCode=" + resultCode + ", resultMsg=" + resultMsg);
+                    }
+                    break;
+                }
+                Iterable<JsonNode> itemNodes = items.isArray() ? items : List.of(items);
+                int pageItemCount = 0;
+                for (JsonNode item : itemNodes) {
+                    result.add(new AsosDailyWeatherDto(LocalDate.parse(text(item, "tm")),
+                            decimal(item, "sumRn"), decimal(item, "avgTa"), decimal(item, "maxTa"), decimal(item, "minTa"),
+                            decimal(item, "avgWs"), decimal(item, "maxWs")));
+                    pageItemCount++;
+                }
+                if (pageItemCount == 0) break;
+                pageNo++;
+            } while ((totalCount > 0 && result.size() < totalCount) || (totalCount == 0 && pageNo == 2));
             log.info("KMA ASOS daily response: stationId={}, from={}, to={}, observationCount={}",
                     stationId, from, to, result.size());
             return result;

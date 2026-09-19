@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.Month;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -45,6 +47,7 @@ public class WeatherRiskAnalyzer {
         log.info("WEATHER_RISK analysis started: stationId={}, stationName={}, distanceKm={}, latestAllowedYear={}, requestedYears={}",
                 selected.station().getStationId(), selected.station().getStationName(), selected.distanceKm(), latestYear, requestedYears);
         List<WeatherStatisticsCalculator.YearWeather> years = new java.util.ArrayList<>();
+        List<WeatherStatisticsCalculator.YearWeather> monthlyYears = new ArrayList<>();
         for (int year = latestYear; year >= 1 && years.size() < requestedYears; year--) {
             LocalDate from = sameMonthDay(year, plan.getStartDate());
             LocalDate to = sameMonthDay(year, plan.getEndDate());
@@ -55,10 +58,16 @@ public class WeatherRiskAnalyzer {
             }
             log.info("WEATHER_RISK year request: year={}, from={}, to={}", year, from, to);
             List<AsosDailyWeatherDto> days = client.getDailyWeather(selected.station().getStationId(), from, to);
-            if (!days.isEmpty()) years.add(new WeatherStatisticsCalculator.YearWeather(year, days));
+            if (!days.isEmpty()) {
+                years.add(new WeatherStatisticsCalculator.YearWeather(year, days));
+                List<AsosDailyWeatherDto> annualDays = client.getDailyWeather(selected.station().getStationId(),
+                        LocalDate.of(year, Month.JANUARY, 1), LocalDate.of(year, Month.DECEMBER, 31));
+                monthlyYears.add(new WeatherStatisticsCalculator.YearWeather(year, annualDays));
+            }
         }
         years.sort(Comparator.comparingInt(WeatherStatisticsCalculator.YearWeather::year));
-        WeatherStatisticsCalculator.Result result = calculator.calculate(years);
+        monthlyYears.sort(Comparator.comparingInt(WeatherStatisticsCalculator.YearWeather::year));
+        WeatherStatisticsCalculator.Result result = calculator.calculate(years, monthlyYears);
         int totalDays = years.stream().flatMap(y -> y.days().stream()).map(AsosDailyWeatherDto::date).distinct().toList().size();
         int startYear = years.isEmpty() ? latestYear : years.get(0).year();
         int endYear = years.isEmpty() ? latestYear : years.get(years.size() - 1).year();
@@ -67,7 +76,10 @@ public class WeatherRiskAnalyzer {
         return new WeatherRiskResponse(AnalysisItemType.WEATHER_RISK, null,
                 new WeatherRiskResponse.Station(selected.station().getStationId(), selected.station().getStationName(), BigDecimal.valueOf(selected.distanceKm()).setScale(2, java.math.RoundingMode.HALF_UP)),
                 new WeatherRiskResponse.AnalysisPeriod(requestedYears, years.size(), startYear, endYear, totalDays),
-                new WeatherRiskResponse.Rain(result.occurrenceYears(), result.occurrenceRate(), result.validRainDays(), result.rainDays(), result.rainDayRate(), result.averageRainfallMm()),
+                new WeatherRiskResponse.Rain(result.occurrenceYears(), result.occurrenceRate(), result.validRainDays(), result.rainDays(), result.rainDayRate(), result.averageRainfallMm(),
+                        result.monthlyRainOccurrenceRates().stream()
+                                .map(month -> new WeatherRiskResponse.MonthlyRainOccurrence(month.month(), month.validDays(), month.rainDays(), month.occurrenceRate()))
+                                .toList()),
                 new WeatherRiskResponse.Temperature(result.validTemperatureDays(), result.averageTemperature(), result.averageMaxTemperature(), result.averageMinTemperature(), result.hotOccurrenceYears(), result.hotOccurrenceRate(), result.coldOccurrenceYears(), result.coldOccurrenceRate()),
                 new WeatherRiskResponse.Wind(result.validWindDays(), result.averageWindSpeed(), result.maxWindSpeed(), result.strongWindOccurrenceYears(), result.strongWindOccurrenceRate(), result.strongWindDays(), result.strongWindDayRate()),
                 new WeatherRiskResponse.FestivalCondition(plan.getVenueType()),

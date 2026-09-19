@@ -32,6 +32,9 @@ class WeatherStatisticsCalculatorTest {
         assertEquals(1, result.coldOccurrenceYears());
         assertEquals(2, result.strongWindDays());
         assertEquals(2, result.strongWindOccurrenceYears());
+        assertEquals(12, result.monthlyRainOccurrenceRates().size());
+        assertEquals(new BigDecimal("50.00"), result.monthlyRainOccurrenceRates().get(9).occurrenceRate());
+        assertNull(result.monthlyRainOccurrenceRates().get(0).occurrenceRate());
     }
 
     @Test
