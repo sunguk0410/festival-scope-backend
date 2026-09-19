@@ -68,7 +68,8 @@ public class FestivalPlanParsingService {
 
     private List<String> programs(JsonNode root) {
         LinkedHashSet<String> values = new LinkedHashSet<>();
-        JsonNode nodes = root.path("programNames");
+        JsonNode nodes = root.path("coreProgramNames");
+        if (!nodes.isArray()) nodes = root.path("programNames");
         if (nodes.isArray()) nodes.forEach(node -> { if (node.isTextual() && !node.asText().isBlank()) values.add(node.asText().trim()); });
         return new ArrayList<>(values);
     }

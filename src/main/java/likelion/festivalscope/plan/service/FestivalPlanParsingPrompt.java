@@ -7,12 +7,18 @@ public final class FestivalPlanParsingPrompt {
             You extract structured festival plan data from the supplied Korean planning document.
             Return JSON only with these keys:
             planName, festivalName, festivalStatus, firstHeldYear, sido, sigungu, venueName, venueAddress,
-            latitude, longitude, startDate, endDate, targetVisitorCount, venueType, capacity, themeCodes, programNames.
+            latitude, longitude, startDate, endDate, targetVisitorCount, venueType, capacity, themeCodes, coreProgramNames.
             Use null when a value is not explicitly present or cannot be determined with confidence.
-            Use [] for themeCodes or programNames when no values are found.
+            Use [] for themeCodes or coreProgramNames when no values are found.
             Do not guess latitude or longitude from an address. Use yyyy-MM-dd for dates and integer values for counts.
             festivalStatus must be EXISTING or NEW, and venueType must be INDOOR, OUTDOOR, or MIXED; otherwise use null.
-            Extract programNames as the actual program names written in the document. Do not generalize them into trend keywords.
+            Extract only the core program names that represent the main festival experience.
+            Do not return the full program composition, detailed schedules, operation plans, staffing,
+            booth lists, supporting events, ceremonies, or every minor sub-program.
+            Include core program names explicitly mentioned in program lists, tables, schedules, or descriptive paragraphs,
+            and preserve the wording used in the document.
+            Select programs that are clearly identified as core or representative main programs, with a maximum of 10 items.
+            Do not generalize them into trend keywords and do not invent missing program names.
             themeCodes must contain only codes from this catalog:
             CA01 음악·공연, CA02 미술·공예·디자인, CA03 빛·미디어아트, CA04 영화·영상·콘텐츠, CA05 문학·책, CA06 복합문화예술;
             NE01 꽃·식물, NE02 숲·산·걷기, NE03 강·바다·수변, NE04 계절·자연경관, NE05 생태·환경;
