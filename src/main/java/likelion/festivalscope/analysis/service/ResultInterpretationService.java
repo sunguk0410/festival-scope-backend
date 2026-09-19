@@ -616,15 +616,15 @@ public class ResultInterpretationService {
         BigDecimal historicalRate = historyYears == null || historyYears == 0 ? null
                 : BigDecimal.valueOf(historicalEventYears * 100L)
                 .divide(BigDecimal.valueOf(historyYears), 2, RoundingMode.HALF_UP);
-        String directSentence = directOverlapSentence(directCount);
-        String nearbySentence = nearbyPeriodSentence(nearbyCount);
-        String historicalSentence = historicalSentence(historyYears, historicalEventYears, historicalRate);
-        String regionSentence = regionConflictSentence(snapshot.getSameRegionCount());
-        String themeSentence = themeSentence(events);
-        String summary = conflictSummary(directCount, nearbyCount, historicalRate);
+        String directSentence = conflictDirectOverlapSentence(directCount);
+        String nearbySentence = conflictNearbyPeriodSentence(nearbyCount);
+        String historicalSentence = conflictHistoricalSentence(historyYears, historicalEventYears, historicalRate);
+        String regionSentence = conflictRegionSentence(snapshot.getSameRegionCount());
+        String themeSentence = conflictThemeSentence(events);
+        String summary = conflictSummaryV2(directCount, nearbyCount, historicalEventYears, historicalRate);
         String detail = String.join(" ", List.of(directSentence, nearbySentence, historicalSentence,
                         regionSentence, themeSentence))
-                + " " + conflictConclusion(directCount, nearbyCount, historicalRate);
+                + " " + conflictConclusionV2(directCount, nearbyCount, historicalEventYears, historicalRate);
         String status = conflictStatus(directCount, nearbyCount, historicalRate);
         return decision(status, new ResultInterpretation(summary, detail.trim()),
                 List.of(metric("directOverlapCount", directCount), metric("nearbyPeriodCount", nearbyCount),
@@ -700,6 +700,81 @@ public class ResultInterpretationService {
                 .count();
         if (sameThemeCount == 0) return "";
         return String.format("확인된 과거 행사 중 %d건은 현재 기획과 유사한 테마를 가지고 있어, 향후 일정이 겹칠 경우 유사한 방문객 수요가 분산될 가능성이 있습니다.", sameThemeCount);
+    }
+
+    private String conflictDirectOverlapSentence(int count) {
+        if (count >= 2) {
+            return String.format("기획한 개최 기간과 동일한 날짜 구간에 과거 주변 행사 %d건이 함께 개최된 사례가 확인되었습니다. 같은 날짜에 여러 행사가 함께 열린 사례가 있어, 향후 일정 확정 시 유사한 일정 중복 가능성을 확인할 필요가 있습니다.", count);
+        }
+        if (count == 1) {
+            return String.format("기획한 개최 기간과 동일한 날짜 구간에 과거 주변 행사 %d건이 함께 개최된 사례가 확인되었습니다. 반복적인 일정 집중으로 보기는 어렵지만, 동일 날짜에 행사가 함께 열린 과거 사례가 존재합니다.", count);
+        }
+        return "기획한 개최 기간과 정확히 동일한 날짜 구간에 주변 행사가 함께 개최된 과거 사례는 확인되지 않았습니다.";
+    }
+
+    private String conflictNearbyPeriodSentence(int count) {
+        if (count >= 3) {
+            return String.format("기획한 개최일 전후의 인접 기간에 과거 주변 행사 %d건이 확인되었습니다. 정확히 같은 날짜는 아니지만 가까운 시기에 행사가 집중된 사례가 있어, 향후 일정 수립 시 주변 행사 일정을 함께 확인할 필요가 있습니다.", count);
+        }
+        if (count >= 1) {
+            return String.format("기획한 개최일 전후의 인접 기간에 과거 주변 행사 %d건이 확인되었습니다. 인접 시기의 행사 집중도가 높은 수준은 아니지만, 일정 수립 시 참고할 수 있는 과거 사례가 존재합니다.", count);
+        }
+        return "기획한 개최일 전후의 인접 기간에서는 별도의 주변 행사 사례가 확인되지 않았습니다.";
+    }
+
+    private String conflictHistoricalSentence(Integer historyYears, int eventYears, BigDecimal rate) {
+        if (historyYears == null || rate == null) {
+            return "더 넓은 과거 동일 시기 범위의 반복 이력을 해석할 수 있는 데이터가 부족합니다.";
+        }
+        if (eventYears == 0) {
+            return String.format("더 넓은 동일 시기 범위에서도 최근 %d년 동안 주변 행사 사례가 확인되지 않았습니다.", historyYears);
+        }
+        if (rate.compareTo(BigDecimal.valueOf(60)) >= 0) {
+            return String.format("더 넓은 과거 동일 시기 범위로 보면, 최근 %d년 중 %d개 연도에서 주변 행사가 확인되었습니다. 비슷한 시기에 행사가 반복적으로 개최된 이력이 있어 향후 일정 수립 시 해당 패턴을 고려할 필요가 있습니다.", historyYears, eventYears);
+        }
+        if (rate.compareTo(BigDecimal.valueOf(20)) >= 0) {
+            return String.format("더 넓은 과거 동일 시기 범위로 보면, 최근 %d년 중 %d개 연도에서 주변 행사가 확인되었습니다. 반복적인 행사 집중이 뚜렷한 수준은 아니지만, 비슷한 시기에 행사가 개최된 과거 사례가 일부 존재합니다.", historyYears, eventYears);
+        }
+        return String.format("더 넓은 동일 시기 범위에서는 최근 %d년 중 일부 연도에서만 주변 행사 사례가 확인되었습니다. 과거 기록만으로 해당 시기에 행사가 반복적으로 집중된다고 보기는 어렵습니다.", historyYears);
+    }
+
+    private String conflictRegionSentence(Integer count) {
+        if (count == null) return "동일 지역 행사 여부를 확인할 수 있는 데이터가 없습니다.";
+        if (count >= 2) {
+            return String.format("이번 분석에서 확인된 과거 행사 가운데 %d건이 동일 지역에서 개최되었습니다. 향후 비슷한 시기에 지역 내 행사가 함께 열릴 경우 방문객과 교통 수요가 직접적으로 겹칠 가능성을 고려할 필요가 있습니다.", count);
+        }
+        if (count == 1) {
+            return String.format("이번 분석에서 확인된 과거 행사 가운데 %d건이 동일 지역에서 개최된 사례가 있습니다. 반복적인 지역 집중으로 보기는 어렵지만, 향후 일정 확정 시 참고할 수 있는 과거 사례입니다.", count);
+        }
+        return "이번 분석에서 확인된 과거 행사 가운데 동일 지역에서 개최된 사례는 확인되지 않았습니다.";
+    }
+
+    private String conflictThemeSentence(List<ConflictRiskResponse.Event> events) {
+        long sameThemeCount = events.stream()
+                .filter(event -> Boolean.TRUE.equals(event.sameTheme()))
+                .count();
+        if (sameThemeCount == 0) return "";
+        return String.format("이번 분석에서 확인된 과거 행사 가운데 %d건은 현재 기획과 유사한 테마를 가진 행사입니다. 향후 실제 일정이 겹칠 경우 유사한 방문객층을 두고 수요가 분산될 가능성을 고려할 필요가 있습니다.", sameThemeCount);
+    }
+
+    private String conflictSummaryV2(int direct, int nearby, int eventYears, BigDecimal rate) {
+        if (direct >= 2) return "과거 동일 날짜에 주변 행사가 함께 개최된 사례가 다수 확인됩니다.";
+        if (direct == 1) return "과거 동일 날짜에 주변 행사가 함께 개최된 사례가 확인됩니다.";
+        if (nearby >= 3) return "과거 동일 날짜의 직접 중복은 없지만 인접 시기에 행사가 집중된 사례가 확인됩니다.";
+        if (rate != null && rate.compareTo(BigDecimal.valueOf(60)) >= 0) return "정확히 같은 날짜의 중복은 없지만 비슷한 시기의 행사 이력이 반복적으로 확인됩니다.";
+        if (rate != null && rate.compareTo(BigDecimal.valueOf(20)) >= 0) return "정확히 같은 날짜의 중복 사례는 없지만 비슷한 시기의 과거 행사 이력이 일부 확인됩니다.";
+        if (nearby == 0 && eventYears == 0) return "과거 데이터를 기준으로 비슷한 시기의 행사 중복 이력은 확인되지 않았습니다.";
+        return "과거 데이터를 기준으로 비슷한 시기의 행사 집중 이력은 제한적인 편입니다.";
+    }
+
+    private String conflictConclusionV2(int direct, int nearby, int eventYears, BigDecimal rate) {
+        if (direct >= 2) return "현재 미래 일정이 확정적으로 충돌한다고 볼 수는 없지만, 동일 날짜에 행사가 함께 개최된 과거 사례가 다수 존재하므로 향후 일정 확정 과정에서 주변 행사 일정을 확인할 필요가 있습니다.";
+        if (direct == 1) return "반복적인 일정 충돌로 단정하기는 어렵지만 동일 날짜에 행사가 함께 개최된 과거 사례가 있으므로, 향후 일정 확정 시 참고할 필요가 있습니다.";
+        if (nearby >= 3) return "정확히 같은 날짜에 행사가 겹친 사례는 확인되지 않았지만 개최일 전후에 주변 행사가 집중된 이력이 있어, 향후 일정 수립 시 인접 행사 일정을 함께 고려할 필요가 있습니다.";
+        if (rate != null && rate.compareTo(BigDecimal.valueOf(60)) >= 0) return "기획한 날짜와 직접적으로 겹친 과거 사례는 없거나 제한적이지만, 더 넓은 동일 시기 범위에서는 주변 행사가 반복적으로 개최된 이력이 확인됩니다. 향후 일정 수립 시 이러한 반복 패턴을 고려할 필요가 있습니다.";
+        if (rate != null && rate.compareTo(BigDecimal.valueOf(20)) >= 0) return "기획한 날짜 및 인접 기간의 직접적인 중복 사례는 제한적이지만, 더 넓은 동일 시기 범위에서는 일부 과거 행사 사례가 확인됩니다. 반복적인 행사 집중 패턴으로 보기는 어려워 현재 단계에서는 참고 수준의 이력으로 해석할 수 있습니다.";
+        if (nearby == 0 && eventYears == 0) return "정확히 같은 날짜와 인접 기간뿐 아니라 더 넓은 동일 시기 범위에서도 주변 행사 사례가 확인되지 않아, 현재 확보된 과거 데이터에서는 일정 중복 가능성이 낮은 편으로 볼 수 있습니다.";
+        return "기획한 날짜 및 인접 기간에서는 주변 행사 사례가 확인되지 않았으며, 더 넓은 동일 시기 범위에서도 반복적으로 행사가 집중된 패턴은 뚜렷하지 않습니다.";
     }
 
     private String conflictSummary(int directCount, int nearbyCount, BigDecimal historicalRate) {
