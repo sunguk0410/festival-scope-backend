@@ -38,6 +38,7 @@ import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
 import likelion.festivalscope.global.exception.ErrorCode;
 import likelion.festivalscope.global.exception.ResourceNotFoundException;
+import likelion.festivalscope.analysis.orchestration.FestivalAnalysisOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -82,7 +83,36 @@ public class FestivalAnalysisService {
     private final AnalysisScoreService analysisScoreService;
     private final FestivalAnalysisInterpretationSnapshotRepository festivalAnalysisInterpretationSnapshotRepository;
     private final ResultInterpretationService resultInterpretationService;
+    private final FestivalAnalysisOrchestrator analysisOrchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public void startAsync(Long analysisId) { analysisOrchestrator.start(analysisId); }
+
+    @Transactional
+    public void runSimilarFestival(Long id) {
+        FestivalAnalysis analysis = getAnalysisEntity(id); FestivalPlan plan = analysis.getFestivalPlan();
+        FestivalAnalysisItem item = item(id, AnalysisItemType.TARGET_VISITOR);
+        TargetVisitorAnalyzer.Result result = targetVisitorAnalyzer.analyze(plan, festivalPlanThemeRepository.findAllByFestivalPlan_FestivalPlanId(plan.getFestivalPlanId()));
+        for (int index = 0; index < result.candidates().size(); index++) {
+            TargetVisitorAnalyzer.Candidate candidate = result.candidates().get(index);
+            festivalAnalysisSimilarRepository.save(FestivalAnalysisSimilar.builder().festivalAnalysisItem(item)
+                    .festival(candidate.festival()).festivalHistory(candidate.history())
+                    .festivalName(candidate.festival() == null ? candidate.history().getFestivalNameRaw() : candidate.festival().getFestivalName())
+                    .year(candidate.history().getYear()).budget(candidate.history().getBudget()).visitorCount(candidate.history().getVisitorCount())
+                    .similarityScore(candidate.similarityScore()).themeSimilarity(candidate.themeSimilarity()).regionSimilarity(candidate.regionSimilarity())
+                    .periodSimilarity(candidate.periodSimilarity()).comparisonType(candidate.comparisonType()).rankOrder(index + 1).build());
+        }
+        saveTargetVisitorSnapshot(item, plan, result);
+    }
+    @Transactional public void runTrendFit(Long id) { saveTrendKeywords(item(id, AnalysisItemType.TREND_FIT), trendFitAnalyzer.analyze(getAnalysisEntity(id).getFestivalPlan())); }
+    @Transactional public void runDemandFit(Long id) { FestivalPlan p=getAnalysisEntity(id).getFestivalPlan(); saveDemandSnapshots(item(id, AnalysisItemType.DEMAND_FIT), p, demandFitAnalyzer.analyze(p)); }
+    @Transactional public void runCompetitionRisk(Long id) { FestivalPlan p=getAnalysisEntity(id).getFestivalPlan(); saveConflictSnapshot(item(id, AnalysisItemType.CONFLICT_RISK), p, scheduleConflictAnalyzer.analyze(p)); }
+    @Transactional public void runWeatherRisk(Long id) { saveWeatherRiskSnapshot(item(id, AnalysisItemType.WEATHER_RISK), weatherRiskAnalyzer.analyze(getAnalysisEntity(id).getFestivalPlan())); }
+    @Transactional public void runTourismLinkage(Long id) { saveTourismLinkageSnapshot(item(id, AnalysisItemType.TOURISM_LINKAGE), tourismLinkageAnalyzer.analyze(getAnalysisEntity(id).getFestivalPlan())); }
+    @Transactional public void finalizeAnalysis(Long id) { FestivalAnalysis a=getAnalysisEntity(id); recommendationService.replaceForAnalysis(a); replaceAnalysisStatus(a, saveInterpretationSnapshots(a), AnalysisStatus.COMPLETED, LocalDateTime.now()); }
+    public void markCompleted(Long id) { }
+    @Transactional public void markFailed(Long id) { replaceAnalysisStatus(getAnalysisEntity(id), null, AnalysisStatus.FAILED, LocalDateTime.now()); }
+    private FestivalAnalysisItem item(Long id, AnalysisItemType type) { return festivalAnalysisItemRepository.findByFestivalAnalysis_FestivalAnalysisIdAndItemType(id, type).orElseThrow(); }
 
     @Transactional(readOnly = true)
     public Page<likelion.festivalscope.analysis.dto.response.AnalysisListResponse> getAnalysisList(Pageable pageable) {
@@ -93,6 +123,19 @@ public class FestivalAnalysisService {
         }
         return festivalAnalysisRepository.findCompletedAnalysisList(userId, AnalysisStatus.COMPLETED, pageable)
                 .map(likelion.festivalscope.analysis.dto.response.AnalysisListResponse::from);
+    }
+
+    @Transactional
+    public Long createAnalysis(Long planId) {
+        FestivalPlan plan = festivalPlanRepository.findById(planId)
+                .orElseThrow(() -> new ResourceNotFoundException("Festival plan not found: " + planId));
+        verifyOwner(plan.getUser().getUserId());
+        FestivalAnalysis analysis = festivalAnalysisRepository.save(FestivalAnalysis.builder()
+                .festivalPlan(plan).analysisVersion("v1.0").analysisStatus(AnalysisStatus.PROCESSING)
+                .startedAt(LocalDateTime.now()).build());
+        festivalAnalysisItemRepository.saveAll(Arrays.stream(AnalysisItemType.values())
+                .map(itemType -> FestivalAnalysisItem.builder().festivalAnalysis(analysis).itemType(itemType).build()).toList());
+        return analysis.getFestivalAnalysisId();
     }
 
     @Transactional(noRollbackFor = AnalysisExecutionException.class)

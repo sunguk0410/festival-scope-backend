@@ -16,12 +16,14 @@ import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
 import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
 import likelion.festivalscope.analysis.dto.response.TourismLinkageResponse;
 import likelion.festivalscope.analysis.service.FestivalAnalysisService;
+import likelion.festivalscope.analysis.orchestration.AnalysisProgressService;
 import likelion.festivalscope.global.response.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import likelion.festivalscope.analysis.dto.response.AnalysisListResponse;
 
 @RestController
@@ -29,6 +31,7 @@ import likelion.festivalscope.analysis.dto.response.AnalysisListResponse;
 @Tag(name = "Festival Analysis", description = "축제 기획안 분석 실행 및 결과 조회 API")
 public class FestivalAnalysisController {
     private final FestivalAnalysisService festivalAnalysisService;
+    private final AnalysisProgressService analysisProgressService;
 
     @Operation(summary = "사용자 분석 목록 조회", description = "로그인한 사용자가 완료한 축제 분석 목록을 최신 기획안 입력일 순으로 조회합니다.")
     @ApiResponses({
@@ -56,7 +59,15 @@ public class FestivalAnalysisController {
     @PostMapping("/api/festival-plans/{planId}/analyses")
     @ResponseStatus(HttpStatus.CREATED)
     public Long execute(@Parameter(description = "분석할 FestivalPlan ID", example = "1") @PathVariable Long planId) {
-        return festivalAnalysisService.execute(planId);
+        Long analysisId = festivalAnalysisService.createAnalysis(planId);
+        festivalAnalysisService.startAsync(analysisId);
+        return analysisId;
+    }
+
+    @GetMapping(value = "/api/analyses/{analysisId}/progress", produces = "text/event-stream")
+    public SseEmitter progress(@PathVariable Long analysisId) {
+        festivalAnalysisService.verifyAnalysisOwner(analysisId);
+        return analysisProgressService.subscribe(analysisId);
     }
 
     @Operation(summary = "축제 분석 결과 요약 조회", description = "분석 결과의 종합 점수, 분석 상태 및 분석 항목 목록을 조회합니다. 각 항목의 상세 데이터는 별도 상세 API에서 조회합니다.")
