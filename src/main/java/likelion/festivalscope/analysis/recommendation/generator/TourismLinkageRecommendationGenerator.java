@@ -46,7 +46,7 @@ public class TourismLinkageRecommendationGenerator implements RecommendationGene
         }
 
         String content = "행사장 3km 내 연계 가능한 관광·문화자원 " + count + "개가 확인되었습니다. "
-                + "주변 관광지를 축제 전후 동선과 연계해 반일 관광 코스로 구성할 수 있습니다.";
+                + "축제 전후에 주변 관광지를 함께 방문할 수 있도록 연계 동선이나 관광 안내 요소를 추가해볼 수 있습니다.";
         return java.util.Optional.of(draft(item, "축제 전후 관광 코스를 구성해보세요.", content, TOURISM_ORDER));
     }
 
