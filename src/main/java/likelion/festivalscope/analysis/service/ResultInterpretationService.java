@@ -74,9 +74,10 @@ public class ResultInterpretationService {
             summary = "행사장 주변의 관광 연계 자원이 제한적이어서 지역 관광으로의 확장 여건이 약한 편입니다.";
             conclusion = "행사장 주변에서 활용할 수 있는 관광·소비·체류 자원이 전반적으로 부족해, 현재 입지에서는 축제 방문을 주변 관광 활동으로 자연스럽게 확장하기 어려운 구조입니다.";
         }
-        String detail = joinTourismSentences(tourismSentence, consumptionSentence, staySentence, distance.sentence());
+        String detail = joinInterpretationLines(
+                tourismSentence, consumptionSentence, staySentence, distance.sentence(), conclusion);
         return decision(tourismStatus(highPotentialCount, lowPotentialCount),
-                new ResultInterpretation(summary, (detail + " " + conclusion).trim()),
+                new ResultInterpretation(summary, detail),
                 List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin5km", tourismCount),
                         metric("foodShoppingWithin5km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount),
                         metric("highPotentialCount", highPotentialCount), metric("lowPotentialCount", lowPotentialCount)));
