@@ -700,9 +700,10 @@ public class FestivalAnalysisService {
                 .orElseThrow(() -> new AnalysisExecutionException("WEATHER_RISK snapshot not found: " + analysisId));
         try {
             WeatherRiskResponse response = objectMapper.readValue(snapshot.getResultJson(), WeatherRiskResponse.class);
+            InterpretationDecision decision = resultInterpretationService.interpretWeatherRisk(response);
             return new WeatherRiskResponse(response.itemType(), response.score(), response.station(), response.analysisPeriod(),
                     response.rain(), response.temperature(), response.wind(), response.festivalCondition(),
-                    recommendationQueryService.findForItem(item), resultInterpretationService.interpretWeatherRisk(response).interpretation());
+                    recommendationQueryService.findForItem(item), decision.interpretation(), decision.status(), decision.statusLevel());
         } catch (Exception exception) {
             throw new AnalysisExecutionException("WEATHER_RISK snapshot parsing failed: " + analysisId, exception);
         }

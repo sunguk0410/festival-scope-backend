@@ -96,14 +96,9 @@ public class ResultInterpretationService {
     private InterpretationDecision decision(String status, ResultInterpretation interpretation,
                                             List<InterpretationMetric> metrics) {
         ResultInterpretation formatted = new ResultInterpretation(
-                addLineBreaks(interpretation.summary()),
-                addLineBreaks(interpretation.detail()));
+                interpretation.summary(),
+                interpretation.detail());
         return new InterpretationDecision(status, formatted, metrics);
-    }
-
-    /** 결과 해석 문장마다 줄바꿈을 넣어 화면에서 문장 단위로 표시한다. */
-    private String addLineBreaks(String text) {
-        return text == null ? null : text.replace(". ", ".\n");
     }
 
     private String tourismSentence(Integer count) {
@@ -140,7 +135,7 @@ public class ResultInterpretationService {
 
     private String joinTourismSentences(String... sentences) {
         return Arrays.stream(sentences).filter(sentence -> sentence != null && !sentence.isBlank())
-                .collect(Collectors.joining(" ")).trim();
+                .collect(Collectors.joining("\n")).trim();
     }
 
     private record DistanceInterpretation(String sentence) {}
@@ -284,7 +279,7 @@ public class ResultInterpretationService {
                         formatInterpretation(similarMedian), formatInterpretation(similarGap.abs()));
             }
         }
-        return base + trendSentence;
+        return joinInterpretationLines(base, trendSentence);
     }
 
     private String historyTrendSentence(List<FestivalAnalysisSimilar> rows) {
@@ -323,9 +318,9 @@ public class ResultInterpretationService {
         String weekSentence = demandWeekSentence(plan, seasonal);
         String accessibilitySentence = demandAccessibilitySentence(result.accessibility());
         String summary = demandSummary(regionPercentile, monthPercentile);
-        String detail = String.join(" ", List.of(regionSentence, monthSentence, weekSentence, accessibilitySentence))
-                + " " + demandConclusion(regionPercentile, monthPercentile);
-        return decision(demandStatus(regionPercentile, monthPercentile), new ResultInterpretation(summary, detail.trim()),
+        String detail = joinInterpretationLines(regionSentence, monthSentence, weekSentence, accessibilitySentence,
+                demandConclusion(regionPercentile, monthPercentile));
+        return decision(demandStatus(regionPercentile, monthPercentile), new ResultInterpretation(summary, detail),
                 List.of(metric("regionPercentile", regionPercentile), metric("monthPercentile", monthPercentile),
                         metric("eventMonthRank", seasonal.eventMonthRank()), metric("currentWeekRank", currentWeekRank(plan, seasonal))));
     }
@@ -603,7 +598,15 @@ public class ResultInterpretationService {
 
     private String joinWeatherSentences(String... sentences) {
         return Arrays.stream(sentences).filter(sentence -> sentence != null && !sentence.isBlank())
-                .collect(Collectors.joining(" ")).trim();
+                .collect(Collectors.joining("\n")).trim();
+    }
+
+    private String joinInterpretationLines(String... sentences) {
+        return Arrays.stream(sentences)
+                .filter(sentence -> sentence != null && !sentence.isBlank())
+                .map(String::trim)
+                .collect(Collectors.joining("\n"))
+                .trim();
     }
 
     private enum TemperatureType { HOT, COLD, NEUTRAL }
@@ -630,11 +633,11 @@ public class ResultInterpretationService {
         String regionSentence = conflictRegionSentence(snapshot.getSameRegionCount());
         String themeSentence = conflictThemeSentence(events);
         String summary = conflictSummaryV2(directCount, nearbyCount, historicalEventYears, historicalRate);
-        String detail = String.join(" ", List.of(directSentence, nearbySentence, historicalSentence,
-                        regionSentence, themeSentence))
-                + " " + conflictConclusionV2(directCount, nearbyCount, historicalEventYears, historicalRate);
+        String detail = joinInterpretationLines(directSentence, nearbySentence, historicalSentence,
+                regionSentence, themeSentence,
+                conflictConclusionV2(directCount, nearbyCount, historicalEventYears, historicalRate));
         String status = conflictStatus(directCount, nearbyCount, historicalRate);
-        return decision(status, new ResultInterpretation(summary, detail.trim()),
+        return decision(status, new ResultInterpretation(summary, detail),
                 List.of(metric("directOverlapCount", directCount), metric("nearbyPeriodCount", nearbyCount),
                         metric("possibleConflictCount", directCount + nearbyCount), metric("historicalEventYears", historicalEventYears),
                         metric("historyYears", historyYears)));
@@ -949,7 +952,7 @@ public class ResultInterpretationService {
             detail = String.format("핵심 콘텐츠의 통합 검색 관심도는 최근 전년 대비 약 %s%% 감소했습니다. 분석한 %d개 키워드 중 %d개(%s)에서 20%% 이상의 관심 감소가 확인되었습니다. 전체 관심은 크게 약화되었지만 모든 콘텐츠가 동일하게 하락한 것은 아니므로, 키워드별 관심 흐름을 함께 확인할 필요가 있습니다.",
                     trendText, keywordCount, decliningCount, percentage);
         }
-        return eventPeriodSentence.isBlank() ? detail : detail + " " + eventPeriodSentence;
+        return eventPeriodSentence.isBlank() ? detail : joinInterpretationLines(detail, eventPeriodSentence);
     }
 
     private String eventPeriodSentence(BigDecimal eventPeriodGap) {
