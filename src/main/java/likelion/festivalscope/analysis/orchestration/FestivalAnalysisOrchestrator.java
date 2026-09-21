@@ -3,7 +3,6 @@ package likelion.festivalscope.analysis.orchestration;
 import likelion.festivalscope.analysis.service.FestivalAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -13,7 +12,7 @@ import java.util.function.Supplier;
 @Service
 @RequiredArgsConstructor
 public class FestivalAnalysisOrchestrator {
-    private final @Lazy FestivalAnalysisService analysisService;
+    private final FestivalAnalysisService analysisService;
     private final AnalysisProgressService progressService;
 
     @Async("analysisTaskExecutor")

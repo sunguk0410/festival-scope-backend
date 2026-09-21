@@ -16,6 +16,7 @@ import likelion.festivalscope.analysis.weather.dto.WeatherRiskResponse;
 import likelion.festivalscope.analysis.dto.response.ConflictRiskResponse;
 import likelion.festivalscope.analysis.dto.response.TourismLinkageResponse;
 import likelion.festivalscope.analysis.service.FestivalAnalysisService;
+import likelion.festivalscope.analysis.orchestration.FestivalAnalysisOrchestrator;
 import likelion.festivalscope.analysis.orchestration.AnalysisProgressService;
 import likelion.festivalscope.global.response.ErrorResponse;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ import likelion.festivalscope.analysis.dto.response.AnalysisListResponse;
 @Tag(name = "Festival Analysis", description = "축제 기획안 분석 실행 및 결과 조회 API")
 public class FestivalAnalysisController {
     private final FestivalAnalysisService festivalAnalysisService;
+    private final FestivalAnalysisOrchestrator festivalAnalysisOrchestrator;
     private final AnalysisProgressService analysisProgressService;
 
     @Operation(summary = "사용자 분석 목록 조회", description = "로그인한 사용자가 완료한 축제 분석 목록을 최신 기획안 입력일 순으로 조회합니다.")
@@ -60,7 +62,7 @@ public class FestivalAnalysisController {
     @ResponseStatus(HttpStatus.CREATED)
     public Long execute(@Parameter(description = "분석할 FestivalPlan ID", example = "1") @PathVariable Long planId) {
         Long analysisId = festivalAnalysisService.createAnalysis(planId);
-        festivalAnalysisService.startAsync(analysisId);
+        festivalAnalysisOrchestrator.start(analysisId);
         return analysisId;
     }
 

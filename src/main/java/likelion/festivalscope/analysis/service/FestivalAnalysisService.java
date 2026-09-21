@@ -38,7 +38,6 @@ import likelion.festivalscope.global.exception.AnalysisExecutionException;
 import likelion.festivalscope.global.exception.BusinessException;
 import likelion.festivalscope.global.exception.ErrorCode;
 import likelion.festivalscope.global.exception.ResourceNotFoundException;
-import likelion.festivalscope.analysis.orchestration.FestivalAnalysisOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -83,10 +82,7 @@ public class FestivalAnalysisService {
     private final AnalysisScoreService analysisScoreService;
     private final FestivalAnalysisInterpretationSnapshotRepository festivalAnalysisInterpretationSnapshotRepository;
     private final ResultInterpretationService resultInterpretationService;
-    private final FestivalAnalysisOrchestrator analysisOrchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    public void startAsync(Long analysisId) { analysisOrchestrator.start(analysisId); }
 
     @Transactional
     public void runSimilarFestival(Long id) {
