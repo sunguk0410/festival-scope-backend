@@ -15,8 +15,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class ResultInterpretationService {
     public InterpretationDecision interpretTourismLinkage(FestivalAnalysisTourismLinkage snapshot) {
-        Integer tourismCount = snapshot.getTourismCultureWithin3kmCount();
-        Integer foodShoppingCount = snapshot.getFoodShoppingWithin3kmCount();
+        Integer tourismCount = snapshot.getTourismCultureWithin5kmCount();
+        Integer foodShoppingCount = snapshot.getFoodShoppingWithin5kmCount();
         Integer accommodationCount = snapshot.getAccommodationWithin5kmCount();
         Integer within3kmCount = snapshot.getTourismCultureWithin3kmCount() == null
                 || snapshot.getFoodShoppingWithin3kmCount() == null
@@ -52,8 +52,8 @@ public class ResultInterpretationService {
             return decision("데이터 부족", new ResultInterpretation(
                     "주변 관광 연계 잠재력을 판단하기 위한 POI 집계가 일부 부족합니다.",
                     joinTourismSentences(tourismSentence, consumptionSentence, staySentence, distance.sentence())),
-                    List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin3km", tourismCount),
-                            metric("foodShoppingWithin3km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount)));
+                    List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin5km", tourismCount),
+                            metric("foodShoppingWithin5km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount)));
         }
 
         String summary;
@@ -77,8 +77,8 @@ public class ResultInterpretationService {
         String detail = joinTourismSentences(tourismSentence, consumptionSentence, staySentence, distance.sentence());
         return decision(tourismStatus(highPotentialCount, lowPotentialCount),
                 new ResultInterpretation(summary, (detail + " " + conclusion).trim()),
-                List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin3km", tourismCount),
-                        metric("foodShoppingWithin3km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount),
+                List.of(metric("totalPoiWithin5km", within5kmCount), metric("tourismCultureWithin5km", tourismCount),
+                        metric("foodShoppingWithin5km", foodShoppingCount), metric("accommodationWithin5km", accommodationCount),
                         metric("highPotentialCount", highPotentialCount), metric("lowPotentialCount", lowPotentialCount)));
     }
 
@@ -100,16 +100,16 @@ public class ResultInterpretationService {
 
     private String tourismSentence(Integer count) {
         if (count == null) return "";
-        if (count >= 10) return String.format("행사장 3km 내 관광·문화자원이 %d개 확인되어 축제와 주변 관광지를 연계할 수 있는 자원 기반이 충분한 편입니다. 축제 방문을 행사장 내부에 한정하지 않고 주변 관광 활동으로 확장할 수 있는 여건이 형성되어 있습니다.", count);
-        if (count >= 3) return String.format("행사장 3km 내 관광·문화자원이 %d개 확인됩니다. 주변 관광지를 축제 전후 일정과 연계할 수 있는 기본적인 자원은 확보되어 있으나, 선택 가능한 관광 동선은 다소 제한적일 수 있습니다.", count);
-        return String.format("행사장 3km 내 확인되는 관광·문화자원은 %d개로 제한적입니다. 축제와 가까운 거리에서 관광 코스를 구성할 수 있는 자원이 많지 않아, 주변 관광지와의 직접적인 연계 여건은 상대적으로 약한 편입니다.", count);
+        if (count >= 10) return String.format("행사장 5km 내 관광·문화자원이 %d개 확인되어 축제와 주변 관광지를 연계할 수 있는 자원 기반이 충분한 편입니다. 축제 방문을 행사장 내부에 한정하지 않고 주변 관광 활동으로 확장할 수 있는 여건이 형성되어 있습니다.", count);
+        if (count >= 3) return String.format("행사장 5km 내 관광·문화자원이 %d개 확인됩니다. 주변 관광지를 축제 전후 일정과 연계할 수 있는 기본적인 자원은 확보되어 있으나, 선택 가능한 관광 동선은 다소 제한적일 수 있습니다.", count);
+        return String.format("행사장 5km 내 확인되는 관광·문화자원은 %d개로 제한적입니다. 축제와 가까운 거리에서 관광 코스를 구성할 수 있는 자원이 많지 않아, 주변 관광지와의 직접적인 연계 여건은 상대적으로 약한 편입니다.", count);
     }
 
     private String consumptionSentence(Integer count) {
         if (count == null) return "";
-        if (count >= 10) return String.format("행사장 3km 내 음식·쇼핑 자원이 %d개 확인되어 축제 방문객의 소비를 주변 상권으로 연결할 수 있는 기반이 충분한 편입니다. 축제 방문이 식음·쇼핑 등 지역 소비 활동으로 이어질 가능성이 높습니다.", count);
-        if (count >= 3) return String.format("행사장 3km 내 음식·쇼핑 자원이 %d개 확인됩니다. 축제 방문객의 소비를 주변 상권으로 연결할 수 있는 기본적인 환경은 형성되어 있으나, 연계 가능한 상권의 범위는 다소 제한적일 수 있습니다.", count);
-        return String.format("행사장 3km 내 확인되는 음식·쇼핑 자원은 %d개로 제한적입니다. 행사장 인근에서 방문객 소비를 지역 상권으로 자연스럽게 연결할 수 있는 여건은 상대적으로 약한 편입니다.", count);
+        if (count >= 10) return String.format("행사장 5km 내 음식·쇼핑 자원이 %d개 확인되어 축제 방문객의 소비를 주변 상권으로 연결할 수 있는 기반이 충분한 편입니다. 축제 방문이 식음·쇼핑 등 지역 소비 활동으로 이어질 가능성이 높습니다.", count);
+        if (count >= 3) return String.format("행사장 5km 내 음식·쇼핑 자원이 %d개 확인됩니다. 축제 방문객의 소비를 주변 상권으로 연결할 수 있는 기본적인 환경은 형성되어 있으나, 연계 가능한 상권의 범위는 다소 제한적일 수 있습니다.", count);
+        return String.format("행사장 5km 내 확인되는 음식·쇼핑 자원은 %d개로 제한적입니다. 행사장 인근에서 방문객 소비를 지역 상권으로 자연스럽게 연결할 수 있는 여건은 상대적으로 약한 편입니다.", count);
     }
 
     private String staySentence(Integer count) {

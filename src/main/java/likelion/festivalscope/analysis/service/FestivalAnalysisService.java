@@ -377,8 +377,8 @@ public class FestivalAnalysisService {
                     .highRiskCount(metricInteger(decision, "highRiskCount"))
                     .moderateRiskCount(metricInteger(decision, "moderateRiskCount"));
             case TOURISM_LINKAGE -> builder.totalPoiWithin5km(metricInteger(decision, "totalPoiWithin5km"))
-                    .tourismCultureWithin3km(metricInteger(decision, "tourismCultureWithin3km"))
-                    .foodShoppingWithin3km(metricInteger(decision, "foodShoppingWithin3km"))
+                    .tourismCultureWithin3km(metricInteger(decision, "tourismCultureWithin5km"))
+                    .foodShoppingWithin3km(metricInteger(decision, "foodShoppingWithin5km"))
                     .accommodationWithin5km(metricInteger(decision, "accommodationWithin5km"))
                     .highPotentialCount(metricInteger(decision, "highPotentialCount"))
                     .lowPotentialCount(metricInteger(decision, "lowPotentialCount"));
@@ -401,7 +401,7 @@ public class FestivalAnalysisService {
             case DEMAND_FIT -> List.of(metricEntry("regionPercentile", snapshot.getRegionPercentile()), metricEntry("monthPercentile", snapshot.getMonthPercentile()), metricEntry("eventMonthRank", snapshot.getEventMonthRank()), metricEntry("currentWeekRank", snapshot.getCurrentWeekRank()));
             case CONFLICT_RISK -> List.of(metricEntry("directOverlapCount", snapshot.getDirectOverlapCount()), metricEntry("nearbyPeriodCount", snapshot.getNearbyPeriodCount()), metricEntry("possibleConflictCount", snapshot.getPossibleConflictCount()), metricEntry("historicalEventYears", snapshot.getHistoricalEventYears()), metricEntry("historyYears", snapshot.getHistoryYears()));
             case WEATHER_RISK -> List.of(metricEntry("rainOccurrenceRate", snapshot.getRainOccurrenceRate()), metricEntry("temperatureType", temperatureType), metricEntry("temperatureOccurrenceRate", snapshot.getTemperatureOccurrenceRate()), metricEntry("windOccurrenceRate", snapshot.getWindOccurrenceRate()), metricEntry("spaceType", snapshot.getSpaceType()), metricEntry("highRiskCount", snapshot.getHighRiskCount()), metricEntry("moderateRiskCount", snapshot.getModerateRiskCount()));
-            case TOURISM_LINKAGE -> List.of(metricEntry("totalPoiWithin5km", snapshot.getTotalPoiWithin5km()), metricEntry("tourismCultureWithin3km", snapshot.getTourismCultureWithin3km()), metricEntry("foodShoppingWithin3km", snapshot.getFoodShoppingWithin3km()), metricEntry("accommodationWithin5km", snapshot.getAccommodationWithin5km()), metricEntry("highPotentialCount", snapshot.getHighPotentialCount()), metricEntry("lowPotentialCount", snapshot.getLowPotentialCount()));
+            case TOURISM_LINKAGE -> List.of(metricEntry("totalPoiWithin5km", snapshot.getTotalPoiWithin5km()), metricEntry("tourismCultureWithin5km", snapshot.getTourismCultureWithin3km()), metricEntry("foodShoppingWithin5km", snapshot.getFoodShoppingWithin3km()), metricEntry("accommodationWithin5km", snapshot.getAccommodationWithin5km()), metricEntry("highPotentialCount", snapshot.getHighPotentialCount()), metricEntry("lowPotentialCount", snapshot.getLowPotentialCount()));
         };
         return new InterpretationDecision(snapshot.getStatus(), snapshot.getStatusLevel(),
                 new ResultInterpretation(snapshot.getSummary(), snapshot.getDetail()), metrics);
@@ -576,8 +576,8 @@ public class FestivalAnalysisService {
         InterpretationDecision decision = storedDecisionOrCompute(analysis, item);
         return summary(item, "관광 연계 잠재력", decision,
                 primary(formatPoi(metricInteger(decision, "totalPoiWithin5km")), "반경 5km 연계 가능 자원"),
-                metrics(metric("관광·문화", formatPoi(metricInteger(decision, "tourismCultureWithin3km"))),
-                        metric("음식·쇼핑", formatPoi(metricInteger(decision, "foodShoppingWithin3km"))),
+                metrics(metric("관광·문화", formatPoi(metricInteger(decision, "tourismCultureWithin5km"))),
+                        metric("음식·쇼핑", formatPoi(metricInteger(decision, "foodShoppingWithin5km"))),
                         metric("숙박", formatPoi(metricInteger(decision, "accommodationWithin5km")))), null);
     }
 
