@@ -95,7 +95,15 @@ public class ResultInterpretationService {
 
     private InterpretationDecision decision(String status, ResultInterpretation interpretation,
                                             List<InterpretationMetric> metrics) {
-        return new InterpretationDecision(status, interpretation, metrics);
+        ResultInterpretation formatted = new ResultInterpretation(
+                addLineBreaks(interpretation.summary()),
+                addLineBreaks(interpretation.detail()));
+        return new InterpretationDecision(status, formatted, metrics);
+    }
+
+    /** 결과 해석 문장마다 줄바꿈을 넣어 화면에서 문장 단위로 표시한다. */
+    private String addLineBreaks(String text) {
+        return text == null ? null : text.replace(". ", ".\n");
     }
 
     private String tourismSentence(Integer count) {
