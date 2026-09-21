@@ -59,6 +59,18 @@ public class ScheduleConflictAnalyzer {
             }
 
             if (history.getYear() >= historyStart && history.getYear() <= historyEnd) {
+                ConflictType type = classifyHistorical(plan, history);
+                if (type != null) {
+                    LocalDate targetStart = sameMonthDay(plan.getStartDate(), history.getYear());
+                    LocalDate targetEnd = sameMonthDay(plan.getEndDate(), history.getYear());
+                    candidates.add(new Candidate(history, type, EventBasis.HISTORICAL,
+                            type == ConflictType.DIRECT_OVERLAP
+                                    ? overlap(targetStart, targetEnd, history.getStartDate(), history.getEndDate())
+                                    : 0,
+                            RegionRelation.SAME_REGION));
+                    continue;
+                }
+
                 LocalDate windowStart = sameMonthDay(plan.getStartDate(), history.getYear()).minusDays(HISTORICAL_DAYS);
                 LocalDate windowEnd = sameMonthDay(plan.getEndDate(), history.getYear()).plusDays(HISTORICAL_DAYS);
                 if (sameMonth(plan, history)
@@ -75,6 +87,22 @@ public class ScheduleConflictAnalyzer {
                         .thenComparingInt(candidate -> priority(candidate.conflictType())))
                 .forEach(candidate -> latestByFestival.put(candidate.history().getFestival().getFestivalId(), candidate));
         return new Result(historyStart, historyEnd, new ArrayList<>(latestByFestival.values()));
+    }
+
+    private ConflictType classifyHistorical(FestivalPlan plan, FestivalHistory history) {
+        LocalDate targetStart = sameMonthDay(plan.getStartDate(), history.getYear());
+        LocalDate targetEnd = sameMonthDay(plan.getEndDate(), history.getYear());
+        if (overlaps(targetStart, targetEnd, history.getStartDate(), history.getEndDate())) {
+            return ConflictType.DIRECT_OVERLAP;
+        }
+
+        LocalDate nearbyStart = targetStart.minusDays(NEARBY_DAYS);
+        LocalDate nearbyEnd = targetEnd.plusDays(NEARBY_DAYS);
+        if (!history.getStartDate().isAfter(nearbyEnd)
+                && !history.getEndDate().isBefore(nearbyStart)) {
+            return ConflictType.NEARBY_PERIOD;
+        }
+        return null;
     }
 
     private ConflictType classifyConfirmed(FestivalPlan plan, FestivalHistory history) {
